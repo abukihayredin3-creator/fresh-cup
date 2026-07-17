@@ -1,0 +1,19 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+
+# Generated AI Brain data/model artifacts — regenerate via
+# scripts/generate_sample_trades.py, never commit as binary artifacts.
+data/trade_history.db
+data/trade_history.db-wal
+data/trade_history.db-shm
+data/training_dataset.csv
+data/snapshots/*.csv
+models/*.pkl
+models/registry.json
+models/.registry.lock
+logs/*.log*
+
+.venv/
+venv/
