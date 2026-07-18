@@ -91,9 +91,8 @@ int OnInit()
    else
       EaLog("INIT", "Bridge not reachable yet (" + health.error + "). Will keep retrying on each timer tick.");
 
-   EaLog("INIT", StringFormat(
-      "MMXM AI Brain EA initialized for %s %s, magic=%d",
-      _Symbol, TimeframeToString(_Period), InpMagicNumber));
+   EaLog("INIT", "MMXM AI Brain EA initialized for " + _Symbol + " " + TimeframeToString(_Period) +
+      ", magic=" + IntegerToString(InpMagicNumber));
 
    return(INIT_SUCCEEDED);
   }
@@ -153,7 +152,10 @@ string TimeframeToString(const ENUM_TIMEFRAMES tf)
 
 string GenerateRequestId()
   {
-   return StringFormat("%s-%d-%d", _Symbol, (long)TimeCurrent(), MathRand());
+   //--- Built via concatenation rather than StringFormat's "%d" so
+   //    there's no ambiguity about a 64-bit long argument going through
+   //    a specifier historically sized for 32-bit int.
+   return _Symbol + "-" + IntegerToString((long)TimeCurrent()) + "-" + IntegerToString(MathRand());
   }
 
 //--- Only ask for a new decision once per new bar, and only when this
@@ -488,9 +490,14 @@ void ReportTradeClose(const ulong deal_ticket)
    double total_pnl    = deal_profit + deal_swap + deal_commission;
    datetime exit_time  = (datetime)HistoryDealGetInteger(deal_ticket, DEAL_TIME);
 
-   double entry_price, lot_size, stop_loss, take_profit, mfe, mae;
-   datetime entry_time;
-   string direction;
+   double entry_price = 0.0;
+   double lot_size = 0.0;
+   double stop_loss = 0.0;
+   double take_profit = 0.0;
+   double mfe = 0.0;
+   double mae = 0.0;
+   datetime entry_time = 0;
+   string direction = "";
 
    int idx = FindTrackedIndex(position_id);
    if(idx >= 0)

@@ -81,7 +81,7 @@ string CollectOhlcJson(const string symbol, const ENUM_TIMEFRAMES timeframe, con
 
 double CollectSpreadPoints(const string symbol)
   {
-   long spread_points;
+   long spread_points = 0;
    if(!SymbolInfoInteger(symbol, SYMBOL_SPREAD, spread_points))
       return 0.0;
    return (double)spread_points;

@@ -21,8 +21,13 @@ CTrade g_mmxm_trade;
 
 void TradeExecutorInit(const long magic_number, const int slippage_points)
   {
-   g_mmxm_trade.SetExpertMagicNumber(magic_number);
-   g_mmxm_trade.SetDeviationInPoints(slippage_points);
+   //--- CTrade::SetExpertMagicNumber/SetDeviationInPoints take ulong;
+   //    magic_number/slippage_points are long/int (matching the EA's
+   //    own input types) — explicit casts here avoid a signed/unsigned
+   //    conversion warning under #property strict. Both are always
+   //    small positive numbers in practice, so no value is lost.
+   g_mmxm_trade.SetExpertMagicNumber((ulong)magic_number);
+   g_mmxm_trade.SetDeviationInPoints((ulong)slippage_points);
    g_mmxm_trade.SetTypeFillingBySymbol(_Symbol);
   }
 
@@ -107,7 +112,7 @@ bool ExecuteApprovedTrade(
         }
      }
 
-   bool ok;
+   bool ok = false;
    if(action == "BUY")
       ok = g_mmxm_trade.Buy(lot_size, symbol, 0.0, stop_loss, take_profit, "MMXM AI Brain");
    else

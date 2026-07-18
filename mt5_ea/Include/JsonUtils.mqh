@@ -104,7 +104,7 @@ string JsonRawValue(const string json, const string key, bool &found)
      }
 
    ushort first_char = StringGetCharacter(json, start);
-   int endPos;
+   int endPos = len;
 
    if(first_char == '"')
      {
@@ -142,9 +142,63 @@ string JsonRawValue(const string json, const string key, bool &found)
    return StringSubstr(json, start, endPos - start);
   }
 
+//--- Reverse JsonEscape in a single left-to-right pass. A sequence of
+//    independent StringReplace calls (one per escape kind) cannot
+//    correctly reverse escaping in general: the backslash-doubling
+//    replace runs last, but replacing "\n"/"\r"/"\t" runs BEFORE it can
+//    see whether a given backslash was itself an escaped literal
+//    backslash — a value containing a literal backslash immediately
+//    followed by a literal 'n'/'r'/'t' character would be corrupted by
+//    that ordering. Scanning once, left to right, has no such hazard.
+string JsonUnescape(const string text)
+  {
+   int len = StringLen(text);
+   string result = "";
+   int i = 0;
+
+   while(i < len)
+     {
+      ushort c = StringGetCharacter(text, i);
+      if(c == '\\' && i + 1 < len)
+        {
+         ushort next = StringGetCharacter(text, i + 1);
+         if(next == '"' || next == '\\')
+           {
+            result += StringSubstr(text, i + 1, 1);
+            i += 2;
+            continue;
+           }
+         if(next == 'n')
+           {
+            result += "\n";
+            i += 2;
+            continue;
+           }
+         if(next == 'r')
+           {
+            result += "\r";
+            i += 2;
+            continue;
+           }
+         if(next == 't')
+           {
+            result += "\t";
+            i += 2;
+            continue;
+           }
+         //--- unrecognized escape: keep the backslash literally and
+         //    continue from the next character, rather than guessing.
+        }
+      result += StringSubstr(text, i, 1);
+      i++;
+     }
+
+   return result;
+  }
+
 string JsonGetString(const string json, const string key, const string defaultValue = "")
   {
-   bool found;
+   bool found = false;
    string raw = JsonRawValue(json, key, found);
    if(!found || raw == "null")
       return defaultValue;
@@ -152,15 +206,12 @@ string JsonGetString(const string json, const string key, const string defaultVa
    if(StringLen(raw) >= 2 && StringGetCharacter(raw, 0) == '"')
       raw = StringSubstr(raw, 1, StringLen(raw) - 2);
 
-   StringReplace(raw, "\\\"", "\"");
-   StringReplace(raw, "\\n", "\n");
-   StringReplace(raw, "\\\\", "\\");
-   return raw;
+   return JsonUnescape(raw);
   }
 
 double JsonGetDouble(const string json, const string key, const double defaultValue = 0.0)
   {
-   bool found;
+   bool found = false;
    string raw = JsonRawValue(json, key, found);
    if(!found || raw == "null" || raw == "")
       return defaultValue;
@@ -169,7 +220,7 @@ double JsonGetDouble(const string json, const string key, const double defaultVa
 
 bool JsonGetBoolValue(const string json, const string key, const bool defaultValue = false)
   {
-   bool found;
+   bool found = false;
    string raw = JsonRawValue(json, key, found);
    if(!found)
       return defaultValue;
@@ -181,7 +232,7 @@ bool JsonGetBoolValue(const string json, const string key, const bool defaultVal
 //    risk_percent, rejected_reason).
 bool JsonHasNonNullKey(const string json, const string key)
   {
-   bool found;
+   bool found = false;
    string raw = JsonRawValue(json, key, found);
    return (found && raw != "null");
   }
