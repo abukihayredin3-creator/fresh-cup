@@ -17,7 +17,9 @@ pnpm --filter @fresh-cup/api dev
 - Health: `http://localhost:4000/health`, `http://localhost:4000/health/ready`
 - Swagger/OpenAPI docs: `http://localhost:4000/docs`
 
-## What's implemented (Phase 1)
+## What's implemented (Phases 1–3)
+
+**Phase 1 — core business foundation**
 
 - **Auth** (`/auth/*`): phone OTP (customers), email+password (staff),
   JWT access tokens, hashed/rotating refresh tokens, logout
@@ -29,8 +31,36 @@ pnpm --filter @fresh-cup/api dev
   `/admin/menu-*`): categories + products CRUD, availability toggle, image gallery
 - **Inventory** (`/admin/inventory`): base stock ledger, manual adjustments
 
-No cart, ordering, or payment logic yet — that's Phase 2. See
-[`../../docs/ROADMAP.md`](../../docs/ROADMAP.md).
+**Phase 2 — ordering engine**
+
+- **Modifiers/tables/cart** (`/admin/modifier-groups`, `/admin/tables`, `/cart/*`)
+- **Orders** (`/orders`, `/admin/orders/kitchen-queue`): checkout, status
+  workflow, timeline
+- **Coupons/loyalty** (`/coupons/validate`, `/admin/coupons`, `/loyalty/me`)
+- **Payments** (`/payments/*`): Chapa + cash, webhooks, refunds
+- **Notifications** (`/notifications/push-tokens`) + `/ws/orders` real-time gateway
+
+**Phase 3 — restaurant operations platform**
+
+- **Kitchen** (`/admin/kitchen-stations`, `/admin/orders/kitchen-queue`):
+  stations, per-item prep time, station-filterable queue with lateness
+- **Delivery** (`/admin/delivery-zones`, `/admin/drivers`,
+  `/admin/deliveries`, `/delivery/driver/*`): zone-based fee quoting,
+  driver management, dispatch, GPS tracking, `/ws/delivery` real-time gateway
+- **Inventory automation** (`/admin/recipe-ingredients`,
+  `/admin/inventory/low-stock`): recipe-based auto-deduction on
+  `order.paid`, low-stock alerts
+- **Purchasing** (`/admin/suppliers`, `/admin/purchase-orders`):
+  supplier management, draft → submit → receive workflow with automatic restock
+- **Audit logging** (`/admin/audit-logs`): every admin mutation logged
+  (actor, action, entity, after-state)
+- **Admin dashboard & analytics** (`/admin/dashboard`,
+  `/admin/analytics/*`, `/admin/customers/:id`): on-demand KPIs, sales/
+  item/customer analytics, customer-360
+
+See [`../../docs/ROADMAP.md`](../../docs/ROADMAP.md) and
+[`../../docs/API_DESIGN.md`](../../docs/API_DESIGN.md) for the full
+endpoint reference and what's still ahead (Phase 4+).
 
 ## Testing
 

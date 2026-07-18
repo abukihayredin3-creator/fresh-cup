@@ -8,10 +8,14 @@ admin dashboard, customer portal, delivery dashboard, loyalty system, QR
 menu, inventory management, and analytics — built as one coherent system
 rather than disconnected projects.
 
-> **Status:** Phase 0 — Foundation. The monorepo, every app, and every
-> shared package are scaffolded, wired together, and verified to build,
-> lint, typecheck, and boot with placeholder pages. No restaurant business
-> logic (auth, ordering, payments) exists yet — that starts in Phase 1. See
+> **Status:** Phase 3 complete — `apps/api` implements auth/RBAC, catalog,
+> inventory (Phase 1), the full ordering engine — cart, checkout, payments,
+> coupons, loyalty, real-time order updates (Phase 2) — and the restaurant
+> operations platform — kitchen display, delivery/driver management,
+> inventory automation, purchasing, audit logging, and an admin
+> dashboard/analytics (Phase 3). The frontend apps (`web`, `admin`,
+> `delivery`, `mobile`) are still scaffolds consuming none of this yet —
+> backend-first, same pattern every phase so far. See
 > [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
 ## Start here
@@ -24,16 +28,18 @@ rather than disconnected projects.
 | [`docs/FOLDER_STRUCTURE.md`](docs/FOLDER_STRUCTURE.md) | Monorepo layout for every app and shared package                                                                         |
 | [`docs/DESIGN_SYSTEM.md`](docs/DESIGN_SYSTEM.md)       | Brand identity, color system, typography, component tokens                                                               |
 | [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)             | Infrastructure, environments, CI/CD pipeline                                                                             |
-| [`docs/ROADMAP.md`](docs/ROADMAP.md)                   | Phased implementation plan, phase 0 → phase 7                                                                            |
+| [`docs/ROADMAP.md`](docs/ROADMAP.md)                   | Phased implementation plan, phase 0 → phase 8                                                                            |
 
 ## What's here
 
-- **`apps/api`** — NestJS backend. Health checks at `/health` (liveness) and
-  `/health/ready` (Postgres + Redis connectivity), env validation on boot,
-  Prisma + Redis wired up with no domain models yet.
-- **`apps/web`** — Next.js marketing site / customer portal / QR menu (port 3000).
-- **`apps/admin`** — Next.js staff/owner dashboard (port 3001).
-- **`apps/delivery`** — Next.js rider dashboard, installable as a PWA (port 3002).
+- **`apps/api`** — NestJS backend implementing Phases 1–3 (see
+  [`apps/api/README.md`](apps/api/README.md) for the endpoint summary, or
+  [`docs/API_DESIGN.md`](docs/API_DESIGN.md) for the full catalog). Health
+  checks at `/health` (liveness) and `/health/ready` (Postgres + Redis
+  connectivity), env validation on boot.
+- **`apps/web`** — Next.js marketing site / customer portal / QR menu (port 3000, scaffold only).
+- **`apps/admin`** — Next.js staff/owner dashboard (port 3001, scaffold only).
+- **`apps/delivery`** — Next.js driver dashboard, installable as a PWA (port 3002, scaffold only).
 - **`apps/mobile`** — Expo (React Native) app for Android + iOS, using expo-router.
 - **`packages/ui`** — Shared brand components (web) built on the Tailwind preset.
 - **`packages/types`**, **`packages/utils`**, **`packages/api-client`** — Shared
@@ -65,8 +71,10 @@ cp apps/admin/.env.example apps/admin/.env.local
 cp apps/delivery/.env.example apps/delivery/.env.local
 cp apps/mobile/.env.example apps/mobile/.env.local
 
-# Generate the Prisma client (no models yet, but the client + tooling work)
+# Generate the Prisma client, then apply migrations and seed dev data
 pnpm --filter @fresh-cup/api prisma:generate
+pnpm --filter @fresh-cup/api prisma:migrate
+pnpm --filter @fresh-cup/api prisma:seed
 
 # Run everything in parallel (Turborepo)
 pnpm dev

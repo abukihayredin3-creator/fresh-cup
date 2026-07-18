@@ -72,19 +72,57 @@ breaking migration once real orders/customers exist.
 - **Exit criteria:** a customer can build a cart, check out via dine-in/
   pickup/delivery, pay by Chapa or cash, and see live order-status updates;
   staff can run the kitchen queue end-to-end — all without touching
-  rider logistics or analytics
+  delivery/driver logistics or analytics
 
-## Phase 3 — Delivery & real-time
+## Phase 3 — Restaurant operations platform ✅
 
-- Delivery module: zones, distance/zone-based fee quoting (replacing the
-  Phase 2 flat rate), rider assignment
-- `apps/delivery`: PWA for riders — assignments, status updates, live location ping
-- Rider-tracking extends the existing `/ws/orders` gateway (or a sibling
-  `/ws/delivery` namespace) built in Phase 2 — the socket auth/room pattern
-  doesn't change, only who joins which room
-- SMS notifications (AfroMessage): swaps in for the Phase 2 console SMS
-  provider behind the same `SmsProvider` interface — no call-site changes
-- **Exit criteria:** delivery orders can be assigned to a rider and tracked live end-to-end
+- Kitchen Display System: kitchen stations, per-menu-item prep time/station
+  (snapshotted onto each order item at checkout so later menu edits don't
+  rewrite history), a `preparingAt` timestamp on `Order`, and an enhanced
+  kitchen queue reporting `elapsedSeconds`/`isLate` per order, filterable by
+  station
+- Delivery module: `DRIVER` role + driver account management, circular
+  delivery zones (center + radius, no PostGIS dependency) with
+  haversine-based fee quoting that replaces the Phase 2 flat rate when a
+  zone covers the drop-off point (falls back to the flat rate otherwise —
+  fully backward compatible), a `Delivery`/`DeliveryTrackingPing` model
+  auto-created at checkout for delivery orders, a staff dispatch dashboard
+  with manual driver assignment, and driver-facing self-service endpoints
+  (availability toggle, GPS pings, delivery status updates that drive the
+  parent order's status: picked-up → `out_for_delivery`, delivered →
+  `delivered`)
+- Real-time: `/ws/delivery` namespace (same JWT-auth/room pattern as the
+  Phase 2 `/ws/orders` gateway) broadcasting assignment, status, and
+  location-ping events to the customer, the assigned driver, and branch staff
+- Inventory automation: recipe mapping (menu item → ingredient quantities)
+  drives automatic stock deduction on `order.paid` — allowed to go negative
+  since an already-paid order can't be rolled back — plus a low-stock event
+  that notifies branch managers/admins and a `GET
+/admin/inventory/low-stock` dashboard endpoint
+- Purchasing: supplier management and a purchase-order workflow (draft →
+  submit → receive), where receiving writes `RESTOCK` inventory-ledger
+  transactions and updates stock atomically
+- Audit logging: an `@Auditable(entityType)` decorator + a global
+  interceptor that writes one `AuditLog` row (actor, action, entity,
+  after-state) per mutating request on every tagged admin controller,
+  readable via `GET /admin/audit-logs`
+- Admin dashboard & analytics: on-demand (not materialized-view/cron-backed)
+  KPI summary, sales-by-day, top-selling items, top customers by spend, and
+  a customer-360 detail view — branch management, employee management, and
+  customer listing were already served by the Phase 1 branches/users APIs
+  and needed no new endpoints here
+- 70 new automated tests (44 unit + 26 e2e against real Postgres), covering
+  zone matching/fallback, the delivery status state machine and its
+  order-status sync, recipe-based deduction (including idempotency against
+  a duplicate `order.paid`), the purchase-order workflow, the audit
+  interceptor, and analytics RBAC/branch-scoping — 246 total on top of the
+  176 from Phase 2
+- **Exit criteria:** kitchen staff run prep off a live, station-filterable
+  queue; delivery orders are zone-priced, assigned, and tracked end-to-end;
+  stock deducts itself as orders are paid and restocks itself as purchase
+  orders are received; every admin mutation is attributable after the fact;
+  and a manager can answer "how are we doing today" from one endpoint —
+  all without AI-driven recommendations or demand forecasting
 
 ## Phase 4 — Loyalty rewards & promotions campaigns
 
@@ -96,12 +134,18 @@ breaking migration once real orders/customers exist.
   API) surfaced in the UI alongside rewards redemption
 - **Exit criteria:** repeat customers can redeem points for a reward; marketing can run a scheduled coupon campaign without engineering involvement
 
-## Phase 5 — Full inventory management
+## Phase 5 — Inventory forecasting & multi-supplier sourcing
 
-- Recipes (menu item → ingredient mapping) on top of the Phase 1 ledger, auto-deduction hooked off the Phase 2 `order.paid` event
-- Low-stock alerts, supplier + purchase-order workflow
-- `apps/admin`: inventory dashboard (stock levels, low-stock flags already served by the Phase 1 API)
-- **Exit criteria:** stock levels stay accurate without manual recounts, and low-stock alerts fire before a menu item has to be pulled mid-service
+- Recipe-based auto-deduction, low-stock alerts, and the supplier/
+  purchase-order workflow already shipped in Phase 3 — this phase covers
+  what's still missing: demand forecasting (predicting reorder timing from
+  historical consumption) and multi-supplier price comparison on a single
+  purchase order, both deliberately deferred out of Phase 3's scope
+- `apps/admin`: inventory dashboard UI consuming the Phase 3
+  `/admin/inventory/low-stock` and `/admin/dashboard` APIs
+- **Exit criteria:** the system suggests a reorder (quantity + supplier)
+  before an item actually runs out, instead of only alerting once it's
+  already at/below threshold
 
 ## Phase 6 — Native mobile apps
 
@@ -109,11 +153,18 @@ breaking migration once real orders/customers exist.
 - Play Store + App Store submission, EAS OTA pipeline
 - **Exit criteria:** feature parity with the web ordering flow, published on both stores
 
-## Phase 7 — Analytics dashboard
+## Phase 7 — Analytics at scale
 
-- Nightly aggregation jobs → `daily_sales_summary`, `item_performance`, cohort retention
-- `apps/admin` analytics views: sales trends, best/worst sellers, customer retention, exportable reports
-- **Exit criteria:** the owner can answer "how did we do this week, and why" without a database query
+- Phase 3 already shipped an on-demand admin dashboard, sales/item/customer
+  analytics, and a customer-360 view — this phase is about what stops
+  being viable once order history grows past what an on-demand query scans
+  comfortably: nightly aggregation jobs materializing `daily_sales_summary`
+  and `item_performance`, cohort retention analysis, and exportable reports
+- `apps/admin` analytics views built against the (already-shipped) Phase 3
+  APIs, extended to consume the new materialized aggregates
+- **Exit criteria:** dashboard queries stay fast regardless of how many
+  years of order history exist, and the owner can export a report instead
+  of only viewing it in-app
 
 ## Phase 8 — Scale & hardening
 
@@ -135,9 +186,13 @@ breaking migration once real orders/customers exist.
   not bolted on later, because every subsequent phase (loyalty accrual,
   inventory deduction, delivery assignment) hooks off
   `order.paid`/`order.status_changed` events.
-- The Delivery Dashboard ships as a PWA in Phase 3 rather than a native app;
-  revisit native only if riders need background location tracking beyond
-  what mobile-web geolocation permissions reliably provide in practice.
+- Phase 3 built the delivery/kitchen/inventory/purchasing/audit/analytics
+  APIs backend-first, same as Phases 1–2 — `apps/delivery`'s driver-facing
+  PWA and `apps/admin`'s dashboard UI consume those APIs but are their own
+  frontend work, not yet built. When the driver PWA is built, it ships as a
+  PWA rather than a native app; revisit native only if drivers need
+  background location tracking beyond what mobile-web geolocation
+  permissions reliably provide in practice.
 - Native mobile apps are deliberately Phase 6, after the web ordering flow
   and API are proven with real orders — building three clients (web, iOS,
   Android) against an unvalidated API multiplies the cost of any early

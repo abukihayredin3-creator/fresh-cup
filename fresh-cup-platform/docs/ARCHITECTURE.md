@@ -25,7 +25,7 @@ low volume but doesn't fall over at high volume.
 | Delivery/pickup customer   | Website, Customer Portal, Android, iOS | Browse menu, order, pay online (Chapa/TeleBirr/card), track order, earn loyalty points |
 | Kitchen staff              | Kitchen Display (part of Admin)        | See incoming orders in real time, mark items in-progress/ready                         |
 | Branch manager / admin     | Admin Dashboard                        | Manage menu, prices, inventory, promotions, staff, view analytics                      |
-| Delivery rider             | Delivery Dashboard (PWA)               | See assigned deliveries, update status, navigate, go online/offline                    |
+| Delivery driver            | Delivery Dashboard (PWA)               | See assigned deliveries, update status, navigate, go online/offline                    |
 | Owner / HQ                 | Admin Dashboard → Analytics            | Cross-branch sales, inventory cost, customer retention                                 |
 
 ## 3. High-level architecture
@@ -45,7 +45,7 @@ flowchart TB
 
     subgraph Backend["Core API — NestJS (TypeScript)"]
         REST[REST API v1\nOpenAPI 3.1]
-        WS[WebSocket Gateway\nOrder status, KDS, rider tracking]
+        WS[WebSocket Gateway\nOrder status, KDS, driver tracking]
         WORKER[Background Workers\nBullMQ queues]
     end
 
@@ -116,7 +116,7 @@ access.
 | Mobile                          | **React Native + Expo**                                                                            | One codebase for Android and iOS, shared business logic and API client with the web apps, EAS lets us ship JS-only fixes as OTA updates without a store review cycle                                                     | Fully native Swift/Kotlin (best perf/platform fit, but ~2x team and 2x the surface for a first release; revisit once volume justifies it)                  |
 | Design system                   | **Tailwind CSS + shadcn/ui (web) / NativeWind (mobile)**                                           | One token source (`packages/ui`) drives color/spacing/type on both web and native via Tailwind-compatible syntax                                                                                                         | Separate component libraries per platform (drifts visually over time)                                                                                      |
 | API contract                    | **OpenAPI 3.1, contract-first**                                                                    | Single spec generates the TypeScript client used by web, admin, delivery, and mobile — no hand-maintained API client, no drift between backend and frontend types                                                        | GraphQL (adds a query layer/complexity this domain doesn't need; REST + typed client covers it)                                                            |
-| Real-time                       | **WebSocket (Socket.IO) via NestJS Gateway, Redis adapter**                                        | Order-status pushes, kitchen display live updates, rider location — polling would be both slower and heavier at scale                                                                                                    | Server-Sent Events (one-directional only; rider location and KDS need bidirectional)                                                                       |
+| Real-time                       | **WebSocket (Socket.IO) via NestJS Gateway, Redis adapter**                                        | Order-status pushes, kitchen display live updates, driver location — polling would be both slower and heavier at scale                                                                                                   | Server-Sent Events (one-directional only; driver location and KDS need bidirectional)                                                                      |
 | Auth                            | **JWT (short-lived access + rotating refresh), phone OTP for customers, email+password for staff** | Phone number is the primary identifier Ethiopian customers actually use; OTP avoids forgotten passwords for a low-friction checkout                                                                                      | Session cookies only (harder to share across native mobile + multiple web subdomains)                                                                      |
 | Payments                        | **Chapa** (aggregator: TeleBirr, CBE Birr, HelloCash, Amole, cards)                                | Chapa is the standard Ethiopian payment aggregator — one integration covers the wallets customers actually have; Stripe/PayPal don't support ETB payouts locally                                                         | Direct TeleBirr integration only (narrower coverage, more integration work for the same result)                                                            |
 | SMS / OTP                       | **AfroMessage (or similar Ethiopian SMS gateway)**                                                 | Local delivery reliability and cost; Twilio has poor/expensive coverage into Ethiopian carriers                                                                                                                          | Twilio                                                                                                                                                     |
@@ -135,31 +135,43 @@ module (e.g., Notifications) becomes a bottleneck.
 - **Identity** — customers, staff, roles/permissions, auth, OTP
 - **Catalog** — categories, menu items, variants, modifiers, availability
 - **Ordering** — cart, order lifecycle, order-type (dine-in/pickup/delivery), tables/QR sessions
+- **Kitchen** — stations, per-item prep time, the live kitchen queue
 - **Payments** — payment intents, Chapa webhook handling, refunds
-- **Delivery** — riders, zones, fee calculation, assignment, live tracking
+- **Delivery** — drivers, zones, fee calculation, dispatch/assignment, live tracking
 - **Loyalty** — points ledger, tiers, rewards catalog, redemptions
 - **Promotions** — coupons, discount rules, campaigns
 - **Inventory** — ingredients, recipes (menu item → ingredient mapping), stock levels, purchase orders, low-stock alerts
-- **Notifications** — SMS, push, email dispatch (consumes events from other modules via the queue)
-- **Analytics** — read-optimized reporting views, scheduled aggregation jobs
+- **Purchasing** — suppliers, purchase-order workflow (draft/submit/receive)
+- **Notifications** — SMS, push, email dispatch (consumes events from other modules)
+- **Analytics** — on-demand admin dashboard/sales/item/customer reporting; a scheduled-aggregation layer is future work once order volume outgrows live queries (see `ROADMAP.md` Phase 7)
+- **Audit** — a cross-cutting interceptor logging every admin mutation (actor, action, entity, after-state), not a bounded context of its own
 - **Branches** — restaurant locations (one today, extensible)
 
 Modules communicate in-process via an internal event bus (Nest
 `EventEmitter`) for cross-cutting concerns — e.g., `order.paid` triggers
 Loyalty to accrue points and Inventory to deduct stock, without Ordering
-importing either module directly. This keeps modules decoupled while
-staying in one deployable for now.
+importing either module directly. Not every cross-module interaction goes
+through events, though: where one module needs to drive another's primary
+state transition synchronously (Payments confirming an Order, Delivery
+driving an Order's status as a driver updates), it injects that module's
+service directly, the same way any two NestJS providers collaborate — the
+event bus is reserved for reactive side effects (notifications, loyalty
+accrual, inventory deduction, low-stock alerts), not primary writes.
 
 ## 7. API architecture
 
 Full detail in [`API_DESIGN.md`](API_DESIGN.md). Summary:
 
 - REST, versioned at `/api/v1`, OpenAPI 3.1 as the source of truth
-- Bearer JWT auth; role-based guards (`customer`, `kitchen`, `manager`, `rider`, `admin`, `super_admin`)
+- Bearer JWT auth; role-based guards (`CUSTOMER`, `STAFF`, `MANAGER`, `DRIVER`, `ADMIN`) —
+  a dedicated `KITCHEN` role (distinct from front-of-house `STAFF`) and
+  `SUPER_ADMIN` (multi-branch HQ management) are deferred rather than
+  modeled speculatively; today's kitchen/delivery features run on
+  `STAFF`/`MANAGER`/`ADMIN` plus `DRIVER`
 - Idempotency keys required on order-creation and payment endpoints
 - Cursor-based pagination on all list endpoints
 - RFC 7807 `problem+json` error format
-- WebSocket namespaces: `/ws/orders` (customer + KDS), `/ws/delivery` (rider location + assignment)
+- WebSocket namespaces: `/ws/orders` (customer + kitchen/staff), `/ws/delivery` (driver location + assignment)
 - Signed webhook endpoint for Chapa payment callbacks
 
 ## 8. Data architecture
@@ -168,15 +180,32 @@ Full schema in [`DATABASE_SCHEMA.md`](DATABASE_SCHEMA.md). Summary:
 
 - PostgreSQL as system of record; every table branch-scoped via `branch_id`
 - Redis caches menu reads (short TTL, invalidated on write) and holds refresh-token/session state
-- Nightly ETL job materializes analytics-friendly aggregate tables (`daily_sales_summary`, `item_performance`) so dashboard queries never hit live OLTP tables directly
+- Dashboard/analytics queries run on-demand against live OLTP tables today
+  (see `API_DESIGN.md`'s Admin dashboard & analytics section) — a nightly
+  aggregation job materializing tables like `daily_sales_summary` is future
+  work (`ROADMAP.md` Phase 7), added once order-history volume actually
+  makes on-demand queries too slow, not built ahead of that need
 - S3 for images/receipts; database stores URLs, not blobs
 
 ## 9. Real-time architecture
 
-- Customer app subscribes to `/ws/orders/{orderId}` after checkout → receives `pending → confirmed → preparing → ready → out_for_delivery → delivered` transitions
-- Kitchen Display subscribes to `/ws/orders/branch/{branchId}` → sees every new order the instant it's paid/confirmed
-- Delivery Dashboard subscribes to `/ws/delivery/branch/{branchId}` for new assignments; rider's app pushes location pings every ~10s while a delivery is active, fanned out to the customer tracking the order
-- Socket.IO's Redis adapter keeps this consistent across multiple API instances behind the load balancer — a ping delivered to instance A can reach a client connected to instance B
+- Customer app connects to `/ws/orders`, sends a `subscribeOrder` message
+  after checkout to join that order's room → receives
+  `order.created`/`order.status_changed` events as the order moves
+  `pending_payment → confirmed → preparing → ready → {completed |
+out_for_delivery → delivered → completed}`
+- Kitchen/staff auto-join their branch's room on connect → see every order
+  event for their branch as it happens; the kitchen queue itself
+  (`GET /admin/orders/kitchen-queue`) is still polled, not pushed
+- Delivery: driver, customer, and admin connect to `/ws/delivery` and send
+  a `subscribeDelivery` message to join that delivery's room; staff/manager
+  auto-join their branch's room. `delivery.assigned`/`delivery.status_changed`/
+  `delivery.location_updated` events fan out from there — the driver app
+  pushes a location ping (`POST /delivery/driver/location`) whenever it has
+  a new fix, no fixed interval enforced server-side yet
+- Single Nest instance only today — the Socket.IO Redis adapter needed to
+  keep rooms consistent across multiple API instances is deferred until a
+  second instance actually exists to justify it
 
 ## 10. Security architecture
 

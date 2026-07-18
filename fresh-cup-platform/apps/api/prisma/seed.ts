@@ -328,6 +328,146 @@ async function seedModifiers(branchId: string) {
   }
 }
 
+const STATIONS = ["Juice Bar", "Smoothie Station", "Bowls & Snacks"] as const;
+
+/** productName -> [stationName, prepTimeSeconds]. Unlisted products keep the schema default. */
+const PRODUCT_STATIONS: Record<string, [(typeof STATIONS)[number], number]> = {
+  "Mango Sunrise": ["Juice Bar", 90],
+  "Orange Zest": ["Juice Bar", 90],
+  "Avocado Cream": ["Juice Bar", 150],
+  "Berry Boost": ["Smoothie Station", 180],
+  "Green Energy": ["Smoothie Station", 180],
+  "Tropical Açaí Bowl": ["Bowls & Snacks", 240],
+  "Granola Energy Bar": ["Bowls & Snacks", 30],
+};
+
+async function seedKitchenStations(branchId: string): Promise<void> {
+  const stationIdByName = new Map<string, string>();
+  for (const name of STATIONS) {
+    let station = await prisma.kitchenStation.findFirst({ where: { branchId, name } });
+    station ??= await prisma.kitchenStation.create({ data: { branchId, name } });
+    stationIdByName.set(name, station.id);
+  }
+
+  for (const [productName, [stationName, prepTimeSeconds]] of Object.entries(PRODUCT_STATIONS)) {
+    const menuItem = await prisma.menuItem.findFirst({ where: { branchId, nameEn: productName } });
+    if (!menuItem || menuItem.stationId) continue;
+    await prisma.menuItem.update({
+      where: { id: menuItem.id },
+      data: { stationId: stationIdByName.get(stationName), prepTimeSeconds },
+    });
+  }
+}
+
+/** productName -> [inventoryItemName, quantityPerUnit]. Only ingredients already in INVENTORY_ITEMS. */
+const PRODUCT_RECIPES: Record<string, Array<[string, number]>> = {
+  "Mango Sunrise": [["Mango", 250]],
+  "Orange Zest": [["Orange", 300]],
+  "Avocado Cream": [
+    ["Avocado", 200],
+    ["Honey", 20],
+  ],
+  "Berry Boost": [
+    ["Greek Yogurt", 150],
+    ["Honey", 10],
+  ],
+  "Green Energy": [["Mango", 100]],
+  "Tropical Açaí Bowl": [
+    ["Granola", 50],
+    ["Honey", 15],
+  ],
+  "Granola Energy Bar": [
+    ["Granola", 80],
+    ["Honey", 10],
+  ],
+};
+
+async function seedRecipeIngredients(branchId: string): Promise<void> {
+  for (const [productName, ingredients] of Object.entries(PRODUCT_RECIPES)) {
+    const menuItem = await prisma.menuItem.findFirst({ where: { branchId, nameEn: productName } });
+    if (!menuItem) continue;
+
+    for (const [inventoryItemName, quantityPerUnit] of ingredients) {
+      const inventoryItem = await prisma.inventoryItem.findFirst({
+        where: { branchId, name: inventoryItemName },
+      });
+      if (!inventoryItem) continue;
+
+      await prisma.recipeIngredient.upsert({
+        where: {
+          menuItemId_inventoryItemId: {
+            menuItemId: menuItem.id,
+            inventoryItemId: inventoryItem.id,
+          },
+        },
+        update: {},
+        create: { menuItemId: menuItem.id, inventoryItemId: inventoryItem.id, quantityPerUnit },
+      });
+    }
+  }
+}
+
+async function seedDriver(branchId: string): Promise<void> {
+  if (process.env.NODE_ENV === "production") return;
+
+  const email = process.env.DRIVER_SEED_EMAIL;
+  const password = process.env.DRIVER_SEED_PASSWORD;
+  if (!email || !password) return;
+
+  const existing = await prisma.user.findUnique({ where: { email } });
+  if (existing) return;
+
+  await prisma.user.create({
+    data: {
+      email,
+      passwordHash: await hashPassword(password),
+      fullName: "Merkato Delivery Driver",
+      role: UserRole.DRIVER,
+      branchId,
+      driverProfile: { create: { vehicleType: "motorcycle", licensePlate: "AA-12345" } },
+    },
+  });
+
+  // eslint-disable-next-line no-console
+  console.log(`Seeded DRIVER user: ${email}`);
+}
+
+async function seedDeliveryZone(branchId: string): Promise<void> {
+  const existing = await prisma.deliveryZone.findFirst({
+    where: { branchId, name: "Merkato Core" },
+  });
+  if (existing) return;
+
+  await prisma.deliveryZone.create({
+    data: {
+      branchId,
+      name: "Merkato Core",
+      centerLat: MERKATO_BRANCH.lat,
+      centerLng: MERKATO_BRANCH.lng,
+      radiusKm: 5,
+      baseFee: 3000,
+      perKmFee: 500,
+    },
+  });
+}
+
+async function seedSupplier(branchId: string): Promise<void> {
+  const name = "Addis Fresh Produce Suppliers";
+  const existing = await prisma.supplier.findFirst({ where: { branchId, name } });
+  if (existing) return;
+
+  await prisma.supplier.create({
+    data: {
+      branchId,
+      name,
+      contactName: "Selam Tesfaye",
+      phone: "+251911234567",
+      email: "orders@addisfreshproduce.et",
+      address: "Merkato, Addis Ababa, Ethiopia",
+    },
+  });
+}
+
 async function seedTable(branchId: string) {
   const existing = await prisma.table.findFirst({ where: { branchId, label: "T-1" } });
   if (existing) return;
@@ -358,6 +498,12 @@ async function main() {
   await seedModifiers(branch.id);
   await seedTable(branch.id);
   await seedCoupon();
+
+  await seedKitchenStations(branch.id);
+  await seedRecipeIngredients(branch.id);
+  await seedDeliveryZone(branch.id);
+  await seedSupplier(branch.id);
+  await seedDriver(branch.id);
 
   await seedDevUser({
     emailEnv: "ADMIN_SEED_EMAIL",

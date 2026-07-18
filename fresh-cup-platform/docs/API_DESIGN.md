@@ -95,17 +95,33 @@ cart/checkout customization contract, not an admin management view.
 | POST/PATCH/DELETE | `/admin/modifier-groups/{id}/options`, `/admin/modifier-groups/{id}/options/{optionId}`     | `manager`/`admin`                                            |
 | POST/PATCH/DELETE | `/admin/menu-items/{id}/modifier-groups`, `/admin/menu-items/{id}/modifier-groups/{linkId}` | `manager`/`admin`; attach/update/detach a group from an item |
 
-## Inventory (base ledger — recipe deduction is Phase 5)
+## Inventory
 
-Implemented in Phase 1.
+Base ledger implemented in Phase 1; recipe-based auto-deduction and
+low-stock alerting implemented in Phase 3.
 
 | Method | Path                           | Notes                                                                                            |
 | ------ | ------------------------------ | ------------------------------------------------------------------------------------------------ |
 | GET    | `/admin/inventory`             | `staff`+, paginated, optional `branchId`                                                         |
+| GET    | `/admin/inventory/low-stock`   | `staff`+; items where `currentStock <= reorderThreshold`, optional `branchId`                    |
 | GET    | `/admin/inventory/{id}`        | `staff`+                                                                                         |
 | POST   | `/admin/inventory`             | `manager`/`admin`                                                                                |
 | PATCH  | `/admin/inventory/{id}`        | `manager`/`admin`; stock itself isn't editable here — only `/adjust` changes it                  |
 | POST   | `/admin/inventory/{id}/adjust` | `staff`+; body: `{ delta, reason, note? }`; writes a ledger row, rejects if it would go negative |
+
+### Recipe ingredients (Phase 3)
+
+Maps a menu item to the inventory items (and quantities) it consumes per
+unit sold. A menu item with no rows here simply doesn't deduct anything —
+recipes can be filled in incrementally without breaking existing items.
+Deduction itself isn't a standalone endpoint: it's an internal `order.paid`
+event listener in `InventoryService` (see Events below).
+
+| Method       | Path                             | Notes                                                                       |
+| ------------ | -------------------------------- | --------------------------------------------------------------------------- |
+| GET          | `/admin/recipe-ingredients`      | `staff`+; optional `menuItemId`/`inventoryItemId` filters                   |
+| POST         | `/admin/recipe-ingredients`      | `manager`/`admin`; body: `{ menuItemId, inventoryItemId, quantityPerUnit }` |
+| PATCH/DELETE | `/admin/recipe-ingredients/{id}` | `manager`/`admin`                                                           |
 
 ## Tables (QR dine-in)
 
@@ -171,20 +187,62 @@ reaching `succeeded`, never off order confirmation alone — a cash order is
 confirmed (kitchen starts) before the cash is actually collected, so tying
 accrual to confirmation would reward orders that are later no-shows.
 
-## Delivery (order type only — rider logistics are Phase 3)
+## Delivery
 
-Phase 2 supports `orderType: DELIVERY` as a checkout option (address
-snapshot, flat-rate MVP fee) but not rider assignment/tracking. The
-following are Phase 3, unimplemented:
+Phase 2 added `orderType: DELIVERY` as a checkout option with a flat-rate
+MVP fee. Phase 3 replaced the flat fee with zone-based quoting (falling
+back to the flat rate when no zone covers the point) and added driver
+management, dispatch, and live tracking.
 
-| Method | Path                            | Notes                                                             |
-| ------ | ------------------------------- | ----------------------------------------------------------------- |
-| GET    | `/delivery/zones/{branchId}`    | zone polygons + fee rules, replacing the Phase 2 flat rate        |
-| POST   | `/delivery/quote`               | body: `{ branch_id, lat, lng }` → `{ fee, eta_minutes, in_zone }` |
-| GET    | `/rider/deliveries`             | rider's assigned deliveries (`rider` role)                        |
-| PATCH  | `/rider/deliveries/{id}/status` | `picked_up`, `delivered`, `failed`                                |
-| POST   | `/rider/location`               | high-frequency location ping while online                         |
-| PATCH  | `/rider/availability`           | go online/offline                                                 |
+### Zones & fee quoting
+
+Zones are circular (center lat/lng + radius km, not GeoJSON polygons — a
+deliberate simplification avoiding a PostGIS dependency). The smallest
+zone covering a point wins; `checkout` calls the same matcher internally.
+
+| Method           | Path                          | Notes                                                                                             |
+| ---------------- | ----------------------------- | ------------------------------------------------------------------------------------------------- |
+| GET              | `/admin/delivery-zones`       | `staff`+, paginated, optional `branchId`                                                          |
+| POST             | `/admin/delivery-zones`       | `manager`/`admin`; body: `{ branchId, name, centerLat, centerLng, radiusKm, baseFee, perKmFee? }` |
+| GET/PATCH/DELETE | `/admin/delivery-zones/{id}`  | `staff`+ read, `manager`/`admin` write; DELETE soft-deletes (`isActive: false`)                   |
+| POST             | `/admin/delivery-zones/quote` | `staff`+; body: `{ branchId, lat, lng }` → `{ fee, etaMinutes, inZone, zoneId, distanceKm }`      |
+
+### Driver management (admin)
+
+`DRIVER` is a `User` role with a 1:1 `DriverProfile` extension (vehicle
+type, license plate, online status, last-known location).
+
+| Method | Path                  | Notes                                                                                          |
+| ------ | --------------------- | ---------------------------------------------------------------------------------------------- |
+| GET    | `/admin/drivers`      | `staff`+, paginated; managers auto-scoped to their own branch                                  |
+| GET    | `/admin/drivers/{id}` | `staff`+                                                                                       |
+| POST   | `/admin/drivers`      | `manager`/`admin`; body: `{ branchId, email, password, fullName, vehicleType, licensePlate? }` |
+| PATCH  | `/admin/drivers/{id}` | `manager`/`admin`                                                                              |
+
+### Dispatch dashboard (staff)
+
+A `Delivery` row is created automatically at checkout for every
+`orderType: DELIVERY` order — there's no separate "create a delivery"
+endpoint.
+
+| Method | Path                              | Notes                                                                                                |
+| ------ | --------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| GET    | `/admin/deliveries`               | `staff`+, paginated; optional `branchId`/`status`/`driverId`; managers branch-scoped                 |
+| GET    | `/admin/deliveries/{id}`          | `staff`+                                                                                             |
+| GET    | `/admin/deliveries/{id}/tracking` | `staff`+; ordered GPS pings for that delivery                                                        |
+| POST   | `/admin/deliveries/{id}/assign`   | `staff`+; body: `{ driverId }`; rejects an already-assigned delivery or a driver from another branch |
+
+### Driver self-service (driver role only)
+
+A driver can only ever act on their own availability, location, and the
+deliveries assigned to them.
+
+| Method | Path                                      | Notes                                                                                                                                                         |
+| ------ | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| PATCH  | `/delivery/driver/availability`           | body: `{ isOnline }`                                                                                                                                          |
+| POST   | `/delivery/driver/location`               | body: `{ lat, lng }`; attaches a tracking ping to the driver's active delivery, if any                                                                        |
+| GET    | `/delivery/driver/deliveries`             | own current + past deliveries, paginated                                                                                                                      |
+| PATCH  | `/delivery/driver/deliveries/{id}/status` | body: `{ status }`, one of `PICKED_UP`/`EN_ROUTE`/`DELIVERED`/`FAILED`; `PICKED_UP` drives the parent order to `out_for_delivery`, `DELIVERED` to `delivered` |
 
 ## Promotions (coupons)
 
@@ -222,37 +280,98 @@ failure — is logged to `notification_logs`.
 | POST   | `/notifications/push-tokens`      | registers/updates a device token for the caller |
 | DELETE | `/notifications/push-tokens/{id}` | ownership-checked                               |
 
-## Inventory (purchase orders — staff only, Phase 5)
+## Kitchen (Phase 3)
 
-| Method   | Path                     | Notes                                                 |
-| -------- | ------------------------ | ----------------------------------------------------- |
-| POST/GET | `/admin/purchase-orders` | supplier restocking workflow — Phase 5, unimplemented |
+Kitchen stations are optional — a menu item with no `stationId` just
+doesn't route to a specific station in the queue. `prepTimeSeconds` and
+`stationId` are snapshotted onto each `OrderItem` at checkout, so editing a
+menu item later never rewrites the history of orders already placed.
 
-## Analytics (admin only)
+| Method           | Path                           | Notes                                                                                                                                                                                  |
+| ---------------- | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET              | `/admin/kitchen-stations`      | `staff`+, paginated, optional `branchId`                                                                                                                                               |
+| POST             | `/admin/kitchen-stations`      | `manager`/`admin`; body: `{ branchId, name }`                                                                                                                                          |
+| GET/PATCH/DELETE | `/admin/kitchen-stations/{id}` | `staff`+ read, `manager`/`admin` write; DELETE soft-deletes (`isActive: false`)                                                                                                        |
+| GET              | `/admin/orders/kitchen-queue`  | `staff`+; extended in Phase 3 with optional `stationId` filter and, per order, `elapsedSeconds`/`isLate` (elapsed time since `preparingAt` vs. the order's max item `prepTimeSeconds`) |
 
-| Method | Path                                          | Notes                                         |
-| ------ | --------------------------------------------- | --------------------------------------------- |
-| GET    | `/admin/analytics/sales?from=&to=&branch_id=` | reads from materialized `daily_sales_summary` |
-| GET    | `/admin/analytics/items?from=&to=`            | best/worst sellers                            |
-| GET    | `/admin/analytics/retention`                  | cohort retention                              |
+## Purchasing (Phase 3)
+
+Suppliers and purchase orders are both branch-scoped. A purchase order
+moves `draft → submitted → received` (or `cancelled` from either
+non-terminal state); receiving is what actually restocks inventory — it
+writes a `RESTOCK` ledger transaction per line and increments
+`InventoryItem.currentStock` atomically with closing the order.
+
+| Method           | Path                                  | Notes                                                                                                                                                             |
+| ---------------- | ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET              | `/admin/suppliers`                    | `staff`+, paginated, optional `branchId`                                                                                                                          |
+| POST             | `/admin/suppliers`                    | `manager`/`admin`                                                                                                                                                 |
+| GET/PATCH/DELETE | `/admin/suppliers/{id}`               | `staff`+ read, `manager`/`admin` write; DELETE soft-deletes (`isActive: false`)                                                                                   |
+| GET              | `/admin/purchase-orders`              | `staff`+, paginated; optional `branchId`/`status`/`supplierId`; managers branch-scoped                                                                            |
+| POST             | `/admin/purchase-orders`              | `manager`/`admin`; body: `{ branchId, supplierId, notes?, lines: [{ inventoryItemId, quantityOrdered, unitCost }] }`                                              |
+| GET              | `/admin/purchase-orders/{id}`         | `staff`+                                                                                                                                                          |
+| POST             | `/admin/purchase-orders/{id}/submit`  | `manager`/`admin`; `draft` → `submitted`                                                                                                                          |
+| POST             | `/admin/purchase-orders/{id}/receive` | `staff`+; `submitted` → `received`; body: `{ lines? }` — omit to receive every line in full, or override specific lines' `quantityReceived` for a partial receive |
+| POST             | `/admin/purchase-orders/{id}/cancel`  | `manager`/`admin`; only from `draft`/`submitted`                                                                                                                  |
+
+## Admin dashboard & analytics (Phase 3)
+
+`manager`/`admin` only. All on-demand aggregate queries against live order
+data — no materialized views or nightly aggregation jobs (that's Phase 7,
+once order-history volume actually makes on-demand queries too slow).
+"Revenue" throughout means orders past the payment gate (any status except
+`pending_payment`/`cancelled`), the closest proxy for "paid" without
+joining `Payment`.
+
+| Method | Path                                                    | Notes                                                                                                                                                   |
+| ------ | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/admin/dashboard?branchId=`                            | today's revenue/order count, active orders, pending deliveries, low-stock item count, rolling 7-day revenue                                             |
+| GET    | `/admin/analytics/sales?branchId=&from=&to=`            | revenue/order count by day over the range (defaults to the last 30 days)                                                                                |
+| GET    | `/admin/analytics/items?branchId=&from=&to=&limit=`     | top-selling menu items by revenue                                                                                                                       |
+| GET    | `/admin/analytics/customers?branchId=&from=&to=&limit=` | top customers by spend                                                                                                                                  |
+| GET    | `/admin/customers/{id}`                                 | customer-360: profile, paid order count/total spend, last order, loyalty balance; a manager gets 403 for a customer who's never ordered at their branch |
+
+Branch/employee/customer _management_ (as opposed to analytics) needed no
+new endpoints — `/admin/branches` (Phase 1), `/admin/users` (Phase 1, also
+serves customer listing/detail via `?role=CUSTOMER`), and `/admin/audit-logs`
+(below) already cover it.
+
+## Audit logs (Phase 3)
+
+An `@Auditable(entityType)` decorator + a global interceptor write one
+`AuditLog` row per mutating request (`POST`/`PATCH`/`PUT`/`DELETE`) on any
+tagged controller — actor, `"METHOD path"` as the action, entity type,
+entity id (from the response body's `id`, falling back to the route
+param), and the response body as `after`-state. Fire-and-forget: a failed
+audit write is logged but never fails the real request. Deliberately
+captures only after-state, not a before/after diff — avoids an extra read
+on every mutation. `OrdersController` is deliberately not tagged:
+`OrderStatusHistory` already gives order transitions a purpose-built,
+more precise audit trail.
+
+| Method | Path                | Notes                                                                           |
+| ------ | ------------------- | ------------------------------------------------------------------------------- |
+| GET    | `/admin/audit-logs` | `admin` only, paginated; optional `entityType`/`actorUserId`/`entityId` filters |
 
 ## WebSocket namespaces
 
-`/ws/orders` is implemented in Phase 2 (single Nest instance only — the
-Socket.IO Redis adapter for horizontal scaling is deferred until a second
-API instance actually exists to justify it). `/ws/delivery` is Phase 3.
+`/ws/orders` is implemented in Phase 2, `/ws/delivery` in Phase 3 (both
+single Nest instance only — the Socket.IO Redis adapter for horizontal
+scaling is deferred until a second API instance actually exists to justify
+it).
 
 | Namespace      | Who connects                                                                                                                                                                              | Events                                                                      |
 | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
 | `/ws/orders`   | customer (`order:{id}` room, joined explicitly via a `subscribeOrder` message after checkout), staff/manager (auto-joined to `branch:{id}` on connect), admin (`subscribeBranch` message) | `order.created`, `order.status_changed`                                     |
-| `/ws/delivery` | rider, customer tracking an active delivery, delivery-dashboard staff                                                                                                                     | `delivery.assigned`, `delivery.location_updated`, `delivery.status_changed` |
+| `/ws/delivery` | customer/driver/admin (`delivery:{id}` room, joined explicitly via a `subscribeDelivery` message), staff/manager (auto-joined to `branch:{id}` on connect)                                | `delivery.assigned`, `delivery.status_changed`, `delivery.location_updated` |
 
 Auth on connect via the same JWT, passed as `{ auth: { token } }` in the
 Socket.IO client's connect options (the standard socket.io-client
 credential mechanism) — an `Authorization` header or `?token=` query param
 also work as fallbacks. An invalid or missing token gets the socket
 connected then immediately disconnected by the server, rather than
-rejecting the handshake itself. `subscribeOrder`/`subscribeBranch` ack with
+rejecting the handshake itself. `subscribeOrder`/`subscribeBranch`/
+`subscribeDelivery` ack with
 `{ ok: false, error: "forbidden" | "not_found" | "unauthenticated" }` when
 the caller isn't allowed to join that room.
 
