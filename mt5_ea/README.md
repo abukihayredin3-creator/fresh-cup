@@ -78,6 +78,17 @@ truth.
   back to reconstructing entry price/lot/direction from trade history,
   but stop_loss/take_profit will report as `0.0` ("unknown") in that
   specific edge case — documented, not silently swallowed.
+- **`/trade_result` reports the original `/predict` `request_id` as
+  `trade_id`, not the MT5 position ticket** — the bridge saves the
+  approved candidate's SMC context (trend/BOS/CHOCH/strategy tags/
+  confidence) keyed by `request_id`, and would never find it again at
+  close time otherwise. The EA correlates the two right after execution
+  (`RememberRequestId`/`RecallRequestId` in the main `.mq5` file); like
+  the SL/TP cache above, this correlation is lost if the EA restarts
+  between opening and closing a position, in which case `/trade_result`
+  falls back to the raw position ticket and the bridge records the trade
+  with `translator.py`'s documented "unknown_context" defaults rather
+  than dropping the feedback entirely.
 - **No structure detection here by design**: BOS/CHOCH/order block/FVG/
   liquidity sweep are computed by the bridge (`bridge/smc_features.py`),
   not this EA — see the architecture note in `bridge/README.md` for why.

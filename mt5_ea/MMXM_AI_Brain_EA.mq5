@@ -60,6 +60,18 @@ datetime g_tracked_entry_time[];
 string   g_tracked_direction[];
 string   g_tracked_symbol[];
 
+//--- Correlates a /predict request_id with the MT5 position it resulted
+//    in, so /trade_result can report the SAME identifier the bridge
+//    used to save the approved candidate's context (trend/BOS/CHOCH/
+//    strategy tags/confidence) — without this, the bridge has no way to
+//    match a closed trade back to that context, since MT5's own
+//    position ticket is a completely different identifier space than
+//    the request_id the bridge actually keyed its pending-trade store
+//    by. Populated right after a successful execution; consumed and
+//    removed in ReportTradeClose.
+ulong  g_pending_position_ids[];
+string g_pending_request_ids[];
+
 //+------------------------------------------------------------------+
 int OnInit()
   {
@@ -153,10 +165,15 @@ void RequestDecisionIfDue()
    datetime current_bar_time = iTime(_Symbol, _Period, 0);
    if(current_bar_time == g_last_decision_bar_time)
       return;
-   g_last_decision_bar_time = current_bar_time;
 
    if(CountOpenPositionsForSymbol(_Symbol, InpMagicNumber) > 0)
+     {
+      // Genuinely nothing to ask about this bar while a position is
+      // open — safe to mark handled so we don't re-check every timer
+      // tick until the next new bar.
+      g_last_decision_bar_time = current_bar_time;
       return;
+     }
 
    string request_id = GenerateRequestId();
    string payload = BuildPredictRequestJson(request_id);
@@ -166,10 +183,17 @@ void RequestDecisionIfDue()
    HttpResult result = HttpPost(InpBridgeUrl + "/predict", payload, InpHttpTimeoutMs, InpApiKey);
    if(!result.success)
      {
+      // Deliberately do NOT mark this bar as handled here: a transient
+      // bridge outage would otherwise forfeit the EA's only decision
+      // opportunity for the rest of the bar (up to a full bar period on
+      // higher timeframes). Leaving g_last_decision_bar_time unchanged
+      // means the next OnTimer tick retries instead of waiting for the
+      // next bar.
       EaLogError("RequestDecisionIfDue", result.error);
       return;
      }
 
+   g_last_decision_bar_time = current_bar_time;
    EaLogResponse(request_id, result.body);
    HandlePredictResponse(request_id, result.body);
   }
@@ -244,11 +268,61 @@ void HandlePredictResponse(const string request_id, const string body)
      }
 
    string error;
-   bool ok = ExecuteApprovedTrade(_Symbol, action, lot_size, stop_loss, take_profit, error);
+   ulong  position_id = 0;
+   bool ok = ExecuteApprovedTrade(_Symbol, action, lot_size, stop_loss, take_profit, error, position_id);
    if(ok)
+     {
       EaLogExecution(request_id, action, lot_size, stop_loss, take_profit);
+      if(position_id != 0)
+         RememberRequestId(position_id, request_id);
+      else
+         EaLogError("ExecuteApprovedTrade",
+            "Trade executed but its position could not be resolved — /trade_result "
+            "will fall back to the position ticket as trade_id, losing the original "
+            "candidate context (trend/BOS/CHOCH/strategy tags).");
+     }
    else
       EaLogError("ExecuteApprovedTrade", error);
+  }
+
+//+------------------------------------------------------------------+
+//| request_id <-> position_id correlation                            |
+//+------------------------------------------------------------------+
+
+void RememberRequestId(const ulong position_id, const string request_id)
+  {
+   int size = ArraySize(g_pending_position_ids) + 1;
+   ArrayResize(g_pending_position_ids, size);
+   ArrayResize(g_pending_request_ids, size);
+   g_pending_position_ids[size - 1] = position_id;
+   g_pending_request_ids[size - 1]  = request_id;
+  }
+
+string RecallRequestId(const ulong position_id)
+  {
+   for(int i = 0; i < ArraySize(g_pending_position_ids); i++)
+      if(g_pending_position_ids[i] == position_id)
+         return g_pending_request_ids[i];
+   return "";
+  }
+
+void ForgetRequestId(const ulong position_id)
+  {
+   int idx = -1;
+   for(int i = 0; i < ArraySize(g_pending_position_ids); i++)
+      if(g_pending_position_ids[i] == position_id)
+        {
+         idx = i;
+         break;
+        }
+   if(idx < 0)
+      return;
+
+   int last = ArraySize(g_pending_position_ids) - 1;
+   g_pending_position_ids[idx] = g_pending_position_ids[last];
+   g_pending_request_ids[idx]  = g_pending_request_ids[last];
+   ArrayResize(g_pending_position_ids, last);
+   ArrayResize(g_pending_request_ids, last);
   }
 
 //+------------------------------------------------------------------+
@@ -446,7 +520,18 @@ void ReportTradeClose(const ulong deal_ticket)
    double spread = CollectSpreadPoints(symbol);
    double volume = CollectLatestVolume(symbol, _Period);
    int digits = (int)SymbolInfoInteger(symbol, SYMBOL_DIGITS);
-   string trade_id = IntegerToString((long)position_id);
+
+   //--- Report the ORIGINAL /predict request_id as trade_id, not the
+   //    MT5 position ticket — the bridge saved the approved candidate's
+   //    context (trend/BOS/CHOCH/strategy tags/confidence) keyed by
+   //    request_id, and would never find it again if we reported a
+   //    completely different identifier here. Falls back to the
+   //    position ticket only if the mapping is missing (e.g. the EA was
+   //    restarted between execution and close) — the bridge still
+   //    records the trade in that case, just without the enriched
+   //    context (translator.py's documented "unknown_context" fallback).
+   string original_request_id = RecallRequestId(position_id);
+   string trade_id = (original_request_id != "") ? original_request_id : IntegerToString((long)position_id);
 
    string fields =
       JsonFieldStr("trade_id", trade_id) + "," +
@@ -480,4 +565,5 @@ void ReportTradeClose(const ulong deal_ticket)
       EaLogError("ReportTradeClose", result.error);
 
    RemoveTrackedPosition(position_id);
+   ForgetRequestId(position_id);
   }
