@@ -62,13 +62,8 @@ string CollectOhlcJson(const string symbol, const ENUM_TIMEFRAMES timeframe, con
    //    (oldest first), so iterate backwards.
    for(int i = copied - 1; i >= 0; i--)
      {
-      string time_str = TimeToString(rates[i].time, TIME_DATE | TIME_SECONDS);
-      StringReplace(time_str, ".", "-");
-      StringReplace(time_str, " ", "T");
-      time_str = time_str + "Z";
-
       string bar = JsonObject(
-         JsonFieldStr("time", time_str) + "," +
+         JsonFieldStr("time", FormatIsoTime(rates[i].time)) + "," +
          JsonFieldNum("open", rates[i].open, digits) + "," +
          JsonFieldNum("high", rates[i].high, digits) + "," +
          JsonFieldNum("low", rates[i].low, digits) + "," +

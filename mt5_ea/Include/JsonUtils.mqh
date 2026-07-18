@@ -53,6 +53,18 @@ string JsonFieldBool(const string key, const bool value)
    return "\"" + key + "\":" + (value ? "true" : "false");
   }
 
+//--- MT5 bar/deal timestamps are in the broker's server time, not
+//    necessarily true UTC — see mt5_ea/README.md for the caveat this
+//    implies. Format as an ISO-8601-shaped string for the JSON wire
+//    format regardless.
+string FormatIsoTime(const datetime t)
+  {
+   string s = TimeToString(t, TIME_DATE | TIME_SECONDS);
+   StringReplace(s, ".", "-");
+   StringReplace(s, " ", "T");
+   return s + "Z";
+  }
+
 //--- Wrap a comma-joined list of fragments in a JSON object.
 string JsonObject(const string fields)
   {
