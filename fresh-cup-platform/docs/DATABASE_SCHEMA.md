@@ -71,24 +71,39 @@ Restaurant locations. One row today (Merkato).
 ### `users`
 
 Customers **and** staff share one identity table, differentiated by `role`.
+Implemented in Phase 1 with four roles (`customer`, `staff`, `manager`,
+`admin`); operational roles the platform doesn't have features for yet
+(`kitchen`, `rider`, `super_admin`) are added in the phases that introduce
+kitchen display, delivery, and multi-branch HQ management rather than
+modeled speculatively now.
 
-| Column                 | Type               | Notes                                                                                         |
-| ---------------------- | ------------------ | --------------------------------------------------------------------------------------------- |
-| id                     | uuid PK            |                                                                                               |
-| phone                  | text UNIQUE        | E.164, primary login identifier                                                               |
-| email                  | text UNIQUE NULL   | required for staff, optional for customers                                                    |
-| password_hash          | text NULL          | NULL for OTP-only customers                                                                   |
-| full_name              | text               |                                                                                               |
-| role                   | enum               | `customer`, `kitchen`, `rider`, `manager`, `admin`, `super_admin`                             |
-| branch_id              | uuid FK → branches | NULL for customers/super_admin (not branch-scoped)                                            |
-| locale                 | enum               | `en`, `am`                                                                                    |
-| loyalty_tier           | enum               | `bronze`, `silver`, `gold` (denormalized for fast reads; source of truth is `loyalty_ledger`) |
-| is_active              | boolean            |                                                                                               |
-| created_at, updated_at | timestamptz        |                                                                                               |
+| Column                 | Type               | Notes                                              |
+| ---------------------- | ------------------ | -------------------------------------------------- |
+| id                     | uuid PK            |                                                    |
+| phone                  | text UNIQUE NULL   | E.164, primary login identifier for customers      |
+| email                  | text UNIQUE NULL   | required for staff, unused by phone-only customers |
+| password_hash          | text NULL          | NULL for OTP-only customers                        |
+| full_name              | text               |                                                    |
+| role                   | enum               | `customer`, `staff`, `manager`, `admin`            |
+| branch_id              | uuid FK → branches | NULL for customers/admin (not branch-scoped)       |
+| locale                 | enum               | `en`, `am`                                         |
+| is_active              | boolean            |                                                    |
+| created_at, updated_at | timestamptz        |                                                    |
+
+`loyalty_tier` is deferred to Phase 4 (Loyalty & promotions) rather than
+carried as an unused column until that ledger exists.
 
 ### `otp_codes`
 
 | id, phone, code_hash, expires_at, consumed_at, attempt_count, created_at |
+
+### `refresh_tokens`
+
+Not in the original design — added during Phase 1 auth implementation.
+Refresh tokens are opaque random values (never JWTs), stored only as a
+hash, so a token can be revoked or rotated server-side on every use.
+
+| id, user_id FK, token_hash UNIQUE, expires_at, revoked_at, replaced_by_token_id, created_at |
 
 ### `addresses`
 
@@ -102,21 +117,22 @@ Customers **and** staff share one identity table, differentiated by `role`.
 
 ### `menu_items`
 
-| id, branch_id FK, category_id FK, name_en, name_am, description_en, description_am, base_price, image_url, is_available, calories, tags (text[] e.g. `vegan`,`no-sugar-added`), sort_order, created_at, updated_at |
+| id, branch_id FK, category_id FK, name_en, name_am, description_en, description_am, base_price, is_available, calories, tags (text[] e.g. `vegan`,`no-sugar-added`), sort_order, created_at, updated_at |
 
-### `menu_item_variants`
+### `menu_item_images`
 
-Size options (e.g. Regular / Large) with their own price delta.
-| id, menu_item_id FK, name_en, name_am, price_delta, is_default |
+Implemented instead of a single `image_url` column — a product can carry a
+gallery, with one entry flagged primary. URL-based (the client registers an
+already-hosted URL); there is no multipart upload pipeline yet, so images
+are uploaded to object storage out-of-band.
 
-### `modifier_groups` / `menu_item_modifier_groups` / `modifier_options`
+| id, menu_item_id FK, url, alt_text, is_primary, sort_order, created_at |
 
-Add-ons (e.g. "Extra shot of ginger", "Choose your base"). A group defines
-selection rules (`min_select`, `max_select`); an item links to the groups
-that apply to it; options carry their own price delta.
-| modifier_groups: id, name_en, name_am, min_select, max_select |
-| menu_item_modifier_groups: menu_item_id FK, modifier_group_id FK |
-| modifier_options: id, modifier_group_id FK, name_en, name_am, price_delta, is_available |
+### `menu_item_variants`, `modifier_groups` / `menu_item_modifier_groups` / `modifier_options`
+
+Deferred — Phase 1 scope was "Products CRUD" and "Product Images" only.
+Size options and add-on modifiers are ordering-flow concerns and land
+alongside cart/checkout in Phase 2 (Online ordering).
 
 ### `tables`
 
@@ -194,26 +210,27 @@ Append-only ledger; `users.loyalty_tier` is a cached projection.
 
 ## 7. Inventory
 
+Phase 1 ships the base ledger (`inventory_items` + `inventory_transactions`)
+with a manual adjustment API. Recipe-based auto-deduction, suppliers, and
+purchase orders are Phase 5 (Full inventory management), once ordering exists to
+deduct against.
+
 ### `inventory_items`
 
-| id, branch_id FK, name, unit (`g`,`ml`,`unit`), current_stock, reorder_threshold, unit_cost |
-
-### `recipe_ingredients`
-
-Maps a menu item (or variant) to the ingredients it consumes, so a paid
-order can auto-deduct stock.
-| id, menu_item_id FK, inventory_item_id FK, quantity_required |
+| id, branch_id FK, name, unit (`gram`,`milliliter`,`unit`), current_stock, reorder_threshold, unit_cost, is_active |
 
 ### `inventory_transactions`
 
-Append-only; every stock change (sale deduction, manual adjustment, restock, waste) is a row.
-| id, inventory_item_id FK, delta, reason (`order_deduction`,`restock`,`waste`,`manual_adjustment`), reference_order_id FK NULL, actor_user_id FK NULL, created_at |
+Append-only; every stock change is a row. Phase 1 only writes
+`manual_adjustment`, `restock`, and `waste` reasons — `order_deduction` is
+added once ordering exists to reference.
 
-### `suppliers` / `purchase_orders` / `purchase_order_lines`
+| id, inventory_item_id FK, delta, reason (`manual_adjustment`,`restock`,`waste`), note, actor_user_id FK NULL, created_at |
 
-| suppliers: id, name, phone, email |
-| purchase_orders: id, branch_id FK, supplier_id FK, status (`draft`,`ordered`,`received`), ordered_at, received_at |
-| purchase_order_lines: id, purchase_order_id FK, inventory_item_id FK, quantity, unit_cost |
+### `recipe_ingredients`, `suppliers` / `purchase_orders` / `purchase_order_lines`
+
+Deferred to Phase 5 — recipe-based deduction is meaningless before orders
+exist, and procurement workflow isn't "core business foundation."
 
 ## 8. Reviews & audit
 

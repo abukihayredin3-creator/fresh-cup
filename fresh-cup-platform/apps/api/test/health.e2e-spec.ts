@@ -1,18 +1,12 @@
 import type { INestApplication } from "@nestjs/common";
-import { Test, type TestingModule } from "@nestjs/testing";
 import request from "supertest";
-import { AppModule } from "../src/app.module";
+import { createTestApp } from "./utils/test-app";
 
 describe("HealthController (e2e)", () => {
   let app: INestApplication;
 
   beforeAll(async () => {
-    const moduleFixture: TestingModule = await Test.createTestingModule({
-      imports: [AppModule],
-    }).compile();
-
-    app = moduleFixture.createNestApplication();
-    await app.init();
+    ({ app } = await createTestApp());
   });
 
   afterAll(async () => {
@@ -25,6 +19,15 @@ describe("HealthController (e2e)", () => {
       .expect(200)
       .expect((res) => {
         expect(res.body.status).toBe("ok");
+      });
+  });
+
+  it("GET /health/ready reports database and redis connectivity", () => {
+    return request(app.getHttpServer())
+      .get("/health/ready")
+      .expect(200)
+      .expect((res) => {
+        expect(res.body.dependencies).toEqual({ database: true, redis: true });
       });
   });
 });

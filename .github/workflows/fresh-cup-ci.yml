@@ -132,8 +132,21 @@ jobs:
       - name: Generate Prisma client
         run: pnpm --filter @fresh-cup/api prisma:generate
 
-      - name: Run tests
+      - name: Run database migrations
+        run: pnpm --filter @fresh-cup/api prisma:deploy
+        env:
+          DATABASE_URL: "postgresql://fresh_cup:fresh_cup@localhost:5432/fresh_cup_test"
+
+      - name: Run unit tests
         run: pnpm test
         env:
           DATABASE_URL: "postgresql://fresh_cup:fresh_cup@localhost:5432/fresh_cup_test"
           REDIS_URL: "redis://localhost:6379"
+          JWT_ACCESS_SECRET: "ci-test-secret-not-used-in-any-real-environment"
+
+      - name: Run e2e tests
+        run: pnpm test:e2e
+        env:
+          DATABASE_URL: "postgresql://fresh_cup:fresh_cup@localhost:5432/fresh_cup_test"
+          REDIS_URL: "redis://localhost:6379"
+          JWT_ACCESS_SECRET: "ci-test-secret-not-used-in-any-real-environment"

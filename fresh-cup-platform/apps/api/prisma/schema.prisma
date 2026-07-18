@@ -1,9 +1,13 @@
 // Fresh Cup — Prisma schema.
-// Phase 0 intentionally ships no domain models: see
-// fresh-cup-platform/docs/DATABASE_SCHEMA.md for the full design these
-// models are generated from once Phase 1 (ordering) begins. This file
-// exists now so the datasource/generator wiring, migrations tooling, and
-// PrismaService are proven end-to-end before real tables land on top.
+// Phase 1 scope: identity/auth, RBAC, addresses, catalog (categories +
+// products + images), and inventory base models. Ordering, payments,
+// delivery, loyalty, and promotions are later phases — see
+// fresh-cup-platform/docs/DATABASE_SCHEMA.md and docs/ROADMAP.md.
+//
+// IDs use Prisma's default (client-generated UUIDv4) rather than a
+// DB-generated UUIDv7: it needs no Postgres extension, works identically
+// in every environment, and index locality isn't a concern at this
+// volume — revisit only if that changes.
 
 generator client {
   provider = "prisma-client-js"
@@ -12,4 +16,235 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+/// Staff/ops roles (kitchen, rider, super_admin) are added in the phases that
+/// actually need them (Phase 2 delivery, Phase 7 multi-branch) rather than
+/// modeled speculatively now.
+enum UserRole {
+  CUSTOMER
+  STAFF
+  MANAGER
+  ADMIN
+}
+
+enum Locale {
+  EN
+  AM
+}
+
+enum InventoryUnit {
+  GRAM
+  MILLILITER
+  UNIT
+}
+
+enum InventoryTransactionReason {
+  MANUAL_ADJUSTMENT
+  RESTOCK
+  WASTE
+  // ORDER_DEDUCTION is added when ordering (Phase 1.5/2) exists.
+}
+
+// ---------------------------------------------------------------------------
+// Branches
+// ---------------------------------------------------------------------------
+
+model Branch {
+  id          String   @id @default(uuid())
+  name        String
+  addressText String   @map("address_text")
+  lat         Decimal? @db.Decimal(9, 6)
+  lng         Decimal? @db.Decimal(9, 6)
+  phone       String?
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  users          User[]
+  menuCategories MenuCategory[]
+  menuItems      MenuItem[]
+  inventoryItems InventoryItem[]
+
+  @@map("branches")
+}
+
+// ---------------------------------------------------------------------------
+// Identity
+// ---------------------------------------------------------------------------
+
+model User {
+  id           String   @id @default(uuid())
+  phone        String?  @unique
+  email        String?  @unique
+  passwordHash String?  @map("password_hash")
+  fullName     String   @map("full_name")
+  role         UserRole @default(CUSTOMER)
+  branchId     String?  @map("branch_id")
+  branch       Branch?  @relation(fields: [branchId], references: [id])
+  locale       Locale   @default(EN)
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  addresses             Address[]
+  refreshTokens         RefreshToken[]
+  inventoryTransactions InventoryTransaction[]
+
+  @@index([branchId])
+  @@map("users")
+}
+
+model OtpCode {
+  id           String    @id @default(uuid())
+  phone        String
+  codeHash     String    @map("code_hash")
+  expiresAt    DateTime  @map("expires_at")
+  consumedAt   DateTime? @map("consumed_at")
+  attemptCount Int       @default(0) @map("attempt_count")
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  @@index([phone, createdAt])
+  @@map("otp_codes")
+}
+
+/// Refresh tokens are opaque random values, stored only as a hash — this
+/// table exists purely so a token can be revoked/rotated server-side,
+/// which a self-contained JWT refresh token could not support.
+model RefreshToken {
+  id                String    @id @default(uuid())
+  userId            String    @map("user_id")
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash         String    @unique @map("token_hash")
+  expiresAt         DateTime  @map("expires_at")
+  revokedAt         DateTime? @map("revoked_at")
+  replacedByTokenId String?   @map("replaced_by_token_id")
+  createdAt         DateTime  @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+// ---------------------------------------------------------------------------
+// Addresses
+// ---------------------------------------------------------------------------
+
+model Address {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  label     String
+  freeText  String   @map("free_text")
+  lat       Decimal? @db.Decimal(9, 6)
+  lng       Decimal? @db.Decimal(9, 6)
+  isDefault Boolean  @default(false) @map("is_default")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([userId])
+  @@map("addresses")
+}
+
+// ---------------------------------------------------------------------------
+// Catalog
+// ---------------------------------------------------------------------------
+
+model MenuCategory {
+  id        String   @id @default(uuid())
+  branchId  String   @map("branch_id")
+  branch    Branch   @relation(fields: [branchId], references: [id])
+  nameEn    String   @map("name_en")
+  nameAm    String?  @map("name_am")
+  sortOrder Int      @default(0) @map("sort_order")
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  menuItems MenuItem[]
+
+  @@index([branchId])
+  @@map("menu_categories")
+}
+
+model MenuItem {
+  id            String       @id @default(uuid())
+  branchId      String       @map("branch_id")
+  branch        Branch       @relation(fields: [branchId], references: [id])
+  categoryId    String       @map("category_id")
+  category      MenuCategory @relation(fields: [categoryId], references: [id])
+  nameEn        String       @map("name_en")
+  nameAm        String?      @map("name_am")
+  descriptionEn String?      @map("description_en")
+  descriptionAm String?      @map("description_am")
+  basePrice     Int          @map("base_price")
+  isAvailable   Boolean      @default(true) @map("is_available")
+  calories      Int?
+  tags          String[]     @default([])
+  sortOrder     Int          @default(0) @map("sort_order")
+  createdAt     DateTime     @default(now()) @map("created_at")
+  updatedAt     DateTime     @updatedAt @map("updated_at")
+
+  images MenuItemImage[]
+
+  @@index([branchId, categoryId])
+  @@index([branchId, isAvailable])
+  @@map("menu_items")
+}
+
+model MenuItemImage {
+  id         String   @id @default(uuid())
+  menuItemId String   @map("menu_item_id")
+  menuItem   MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  url        String
+  altText    String?  @map("alt_text")
+  isPrimary  Boolean  @default(false) @map("is_primary")
+  sortOrder  Int      @default(0) @map("sort_order")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([menuItemId])
+  @@map("menu_item_images")
+}
+
+// ---------------------------------------------------------------------------
+// Inventory (base models — recipe-based deduction lands with ordering)
+// ---------------------------------------------------------------------------
+
+model InventoryItem {
+  id               String        @id @default(uuid())
+  branchId         String        @map("branch_id")
+  branch           Branch        @relation(fields: [branchId], references: [id])
+  name             String
+  unit             InventoryUnit
+  currentStock     Decimal       @default(0) @map("current_stock") @db.Decimal(12, 3)
+  reorderThreshold Decimal       @default(0) @map("reorder_threshold") @db.Decimal(12, 3)
+  unitCost         Int           @map("unit_cost")
+  isActive         Boolean       @default(true) @map("is_active")
+  createdAt        DateTime      @default(now()) @map("created_at")
+  updatedAt        DateTime      @updatedAt @map("updated_at")
+
+  transactions InventoryTransaction[]
+
+  @@index([branchId])
+  @@map("inventory_items")
+}
+
+/// Append-only ledger — every stock change is a row, `InventoryItem.currentStock`
+/// is a cached projection kept in sync by the service layer.
+model InventoryTransaction {
+  id              String                     @id @default(uuid())
+  inventoryItemId String                     @map("inventory_item_id")
+  inventoryItem   InventoryItem              @relation(fields: [inventoryItemId], references: [id])
+  delta           Decimal                    @db.Decimal(12, 3)
+  reason          InventoryTransactionReason
+  note            String?
+  actorUserId     String?                    @map("actor_user_id")
+  actorUser       User?                      @relation(fields: [actorUserId], references: [id])
+  createdAt       DateTime                   @default(now()) @map("created_at")
+
+  @@index([inventoryItemId, createdAt])
+  @@map("inventory_transactions")
 }

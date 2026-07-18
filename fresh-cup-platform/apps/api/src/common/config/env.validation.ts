@@ -39,6 +39,32 @@ export class EnvironmentVariables {
   @IsOptional()
   @IsUrl({ require_tld: false })
   DELIVERY_APP_URL?: string;
+
+  @IsString()
+  JWT_ACCESS_SECRET!: string;
+
+  @IsOptional()
+  @IsString()
+  JWT_ACCESS_TTL: string = "15m";
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  REFRESH_TOKEN_TTL_DAYS: number = 30;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  OTP_TTL_MINUTES: number = 5;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  OTP_MAX_ATTEMPTS: number = 5;
+
+  // *_SEED_EMAIL / *_SEED_PASSWORD (ADMIN/MANAGER/STAFF) are read directly
+  // from process.env by prisma/seed.ts, a standalone script the running API
+  // never touches — they're intentionally not part of this class.
 }
 
 export function validateEnv(config: Record<string, unknown>): EnvironmentVariables {

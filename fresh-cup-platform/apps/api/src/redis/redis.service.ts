@@ -1,5 +1,5 @@
 import { Injectable, Logger, type OnModuleDestroy, type OnModuleInit } from "@nestjs/common";
-import type { ConfigService } from "@nestjs/config";
+import { ConfigService } from "@nestjs/config";
 import Redis from "ioredis";
 import type { EnvironmentVariables } from "../common/config/env.validation";
 

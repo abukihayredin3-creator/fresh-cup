@@ -39,7 +39,13 @@ module.exports = tseslint.config(
         "warn",
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
       ],
-      "@typescript-eslint/consistent-type-imports": "warn",
+      // Off, not just off-for-Nest: `eslint --fix` can't tell "only used as
+      // a type" from "must stay a real import so reflect-metadata sees it,"
+      // and this is the *root* fallback config lint-staged uses across every
+      // package — including apps/api, where autofixing this exact rule once
+      // silently broke constructor DI repo-wide. Not worth a style
+      // preference with no functional upside.
+      "@typescript-eslint/consistent-type-imports": "off",
       "no-console": ["warn", { allow: ["warn", "error"] }],
     },
   },

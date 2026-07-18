@@ -1,6 +1,7 @@
 import { Controller, Get, HttpCode, HttpStatus, ServiceUnavailableException } from "@nestjs/common";
-import type { PrismaService } from "../../database/prisma.service";
-import type { RedisService } from "../../redis/redis.service";
+import { Public } from "../../common/decorators/public.decorator";
+import { PrismaService } from "../../database/prisma.service";
+import { RedisService } from "../../redis/redis.service";
 
 @Controller("health")
 export class HealthController {
@@ -9,6 +10,7 @@ export class HealthController {
     private readonly redis: RedisService,
   ) {}
 
+  @Public()
   @Get()
   @HttpCode(HttpStatus.OK)
   liveness() {
@@ -19,6 +21,7 @@ export class HealthController {
     };
   }
 
+  @Public()
   @Get("ready")
   async readiness() {
     const [database, redis] = await Promise.all([this.prisma.isHealthy(), this.redis.isHealthy()]);

@@ -1,32 +1,27 @@
 import "reflect-metadata";
-import { ValidationPipe } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { NestFactory } from "@nestjs/core";
+import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
 import { AppModule } from "./app.module";
+import { configureApp } from "./bootstrap";
 import type { EnvironmentVariables } from "./common/config/env.validation";
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  configureApp(app);
+
   const config = app.get(ConfigService<EnvironmentVariables, true>);
 
-  app.useGlobalPipes(
-    new ValidationPipe({
-      whitelist: true,
-      transform: true,
-      forbidNonWhitelisted: true,
-    }),
-  );
-
-  app.enableCors({
-    origin: [
-      config.get("WEB_APP_URL", { infer: true }),
-      config.get("ADMIN_APP_URL", { infer: true }),
-      config.get("DELIVERY_APP_URL", { infer: true }),
-    ].filter((origin): origin is string => Boolean(origin)),
-    credentials: true,
-  });
-
-  app.setGlobalPrefix("api/v1", { exclude: ["health", "health/ready"] });
+  const swaggerConfig = new DocumentBuilder()
+    .setTitle("Fresh Cup API")
+    .setDescription(
+      "Fresh Cup Juice House — core API. See fresh-cup-platform/docs/API_DESIGN.md for conventions.",
+    )
+    .setVersion("1")
+    .addBearerAuth({ type: "http", scheme: "bearer", bearerFormat: "JWT" })
+    .build();
+  const swaggerDocument = SwaggerModule.createDocument(app, swaggerConfig);
+  SwaggerModule.setup("docs", app, swaggerDocument);
 
   const port = config.get("PORT", { infer: true });
   await app.listen(port);
