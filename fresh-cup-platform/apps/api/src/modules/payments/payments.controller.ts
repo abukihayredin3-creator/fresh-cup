@@ -12,6 +12,7 @@ import {
 import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { UserRole } from "@prisma/client";
 import type { Request } from "express";
+import { Auditable } from "../../common/audit/auditable.decorator";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { Public } from "../../common/decorators/public.decorator";
 import { Roles } from "../../common/decorators/roles.decorator";
@@ -56,6 +57,7 @@ export class PaymentsController {
   @Post(":id/confirm-cash")
   @Roles(UserRole.STAFF, UserRole.MANAGER, UserRole.ADMIN)
   @ApiBearerAuth()
+  @Auditable("Payment")
   @ApiOperation({ summary: "Confirm a cash payment was physically received (staff+)" })
   @ApiOkResponse({ type: PaymentResponseDto })
   confirmCash(
@@ -68,6 +70,7 @@ export class PaymentsController {
   @Post(":id/refund")
   @Roles(UserRole.ADMIN)
   @ApiBearerAuth()
+  @Auditable("Payment")
   @ApiOperation({ summary: "Refund a succeeded payment (admin only)" })
   @ApiOkResponse({ type: PaymentResponseDto })
   refund(@Param("id") id: string): Promise<PaymentResponseDto> {

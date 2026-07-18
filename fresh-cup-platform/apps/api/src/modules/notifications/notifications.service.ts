@@ -1,6 +1,10 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import { OnEvent } from "@nestjs/event-emitter";
-import { NotificationChannel, NotificationStatus, OrderStatus } from "@prisma/client";
+import { NotificationChannel, NotificationStatus, OrderStatus, UserRole } from "@prisma/client";
+import {
+  INVENTORY_EVENTS,
+  type InventoryLowStockEvent,
+} from "../../common/events/inventory-events";
 import {
   ORDER_EVENTS,
   type OrderCreatedEvent,
@@ -66,6 +70,23 @@ export class NotificationsService {
     await this.notifyUser(event.userId, "order_paid", "Payment received — thank you!", {
       orderId: event.orderId,
     });
+  }
+
+  /** Alerts the branch's managers and all admins so someone reorders before stock runs out. */
+  @OnEvent(INVENTORY_EVENTS.LOW_STOCK)
+  async handleLowStock(event: InventoryLowStockEvent): Promise<void> {
+    const recipients = await this.prisma.user.findMany({
+      where: {
+        OR: [{ role: UserRole.MANAGER, branchId: event.branchId }, { role: UserRole.ADMIN }],
+      },
+    });
+    const message = `Low stock: ${event.name} is at ${event.currentStock} (reorder threshold ${event.reorderThreshold}).`;
+    for (const recipient of recipients) {
+      await this.notifyUser(recipient.id, "inventory_low_stock", message, {
+        inventoryItemId: event.inventoryItemId,
+        branchId: event.branchId,
+      });
+    }
   }
 
   private async notifyUser(

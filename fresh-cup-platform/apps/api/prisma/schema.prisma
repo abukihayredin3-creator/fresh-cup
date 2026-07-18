@@ -2,9 +2,13 @@
 // Phase 1: identity/auth, RBAC, addresses, catalog (categories + products
 // + images), inventory base models.
 // Phase 2: modifiers, tables (QR dine-in), cart, orders + status workflow,
-// payments (Chapa/cash), coupons, loyalty accrual, notifications. Rider
-// delivery logistics, analytics, and loyalty redemption/rewards are later
-// phases — see fresh-cup-platform/docs/DATABASE_SCHEMA.md and docs/ROADMAP.md.
+// payments (Chapa/cash), coupons, loyalty accrual, notifications.
+// Phase 3: kitchen stations + prep timers, driver/delivery management
+// (circular zones, GPS tracking), recipe-based automatic inventory
+// deduction + low-stock alerts, supplier/purchase-order workflow, audit
+// logging, admin/sales dashboards. Loyalty redemption/rewards and
+// multi-branch HQ management are still later phases — see
+// fresh-cup-platform/docs/DATABASE_SCHEMA.md and docs/ROADMAP.md.
 //
 // IDs use Prisma's default (client-generated UUIDv4) rather than a
 // DB-generated UUIDv7: it needs no Postgres extension, works identically
@@ -24,14 +28,16 @@ datasource db {
 // Enums
 // ---------------------------------------------------------------------------
 
-/// Staff/ops roles (kitchen, rider, super_admin) are added in the phases that
-/// actually need them (Phase 2 delivery, Phase 7 multi-branch) rather than
-/// modeled speculatively now.
+/// KITCHEN (a dedicated kitchen-staff role, distinct from front-of-house
+/// STAFF) and SUPER_ADMIN (multi-branch HQ management) are added in later
+/// phases rather than modeled speculatively now — Phase 3 kitchen/delivery
+/// features use the existing STAFF/MANAGER/ADMIN roles plus the new DRIVER.
 enum UserRole {
   CUSTOMER
   STAFF
   MANAGER
   ADMIN
+  DRIVER
 }
 
 enum Locale {
@@ -49,9 +55,7 @@ enum InventoryTransactionReason {
   MANUAL_ADJUSTMENT
   RESTOCK
   WASTE
-  // Recipe-based ORDER_DEDUCTION lands in Phase 5 (Full inventory
-  // management) once menu items carry an ingredient mapping to deduct
-  // against — Phase 2 orders don't touch inventory.
+  ORDER_DEDUCTION
 }
 
 enum OrderType {
@@ -130,6 +134,22 @@ enum NotificationStatus {
   SKIPPED
 }
 
+enum DeliveryStatus {
+  UNASSIGNED
+  ASSIGNED
+  PICKED_UP
+  EN_ROUTE
+  DELIVERED
+  FAILED
+}
+
+enum PurchaseOrderStatus {
+  DRAFT
+  SUBMITTED
+  RECEIVED
+  CANCELLED
+}
+
 // ---------------------------------------------------------------------------
 // Branches
 // ---------------------------------------------------------------------------
@@ -145,14 +165,19 @@ model Branch {
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
-  users          User[]
-  menuCategories MenuCategory[]
-  menuItems      MenuItem[]
-  inventoryItems InventoryItem[]
-  tables         Table[]
-  modifierGroups ModifierGroup[]
-  carts          Cart[]
-  orders         Order[]
+  users           User[]
+  menuCategories  MenuCategory[]
+  menuItems       MenuItem[]
+  inventoryItems  InventoryItem[]
+  tables          Table[]
+  modifierGroups  ModifierGroup[]
+  carts           Cart[]
+  orders          Order[]
+  kitchenStations KitchenStation[]
+  deliveryZones   DeliveryZone[]
+  deliveries      Delivery[]
+  suppliers       Supplier[]
+  purchaseOrders  PurchaseOrder[]
 
   @@map("branches")
 }
@@ -185,6 +210,10 @@ model User {
   pushTokens            PushToken[]
   couponRedemptions     CouponRedemption[]
   notificationLogs      NotificationLog[]
+  driverProfile         DriverProfile?
+  deliveriesAsDriver    Delivery[]
+  createdPurchaseOrders PurchaseOrder[]
+  auditLogs             AuditLog[]
 
   @@index([branchId])
   @@map("users")
@@ -264,30 +293,37 @@ model MenuCategory {
 }
 
 model MenuItem {
-  id            String       @id @default(uuid())
-  branchId      String       @map("branch_id")
-  branch        Branch       @relation(fields: [branchId], references: [id])
-  categoryId    String       @map("category_id")
-  category      MenuCategory @relation(fields: [categoryId], references: [id])
-  nameEn        String       @map("name_en")
-  nameAm        String?      @map("name_am")
-  descriptionEn String?      @map("description_en")
-  descriptionAm String?      @map("description_am")
-  basePrice     Int          @map("base_price")
-  isAvailable   Boolean      @default(true) @map("is_available")
-  calories      Int?
-  tags          String[]     @default([])
-  sortOrder     Int          @default(0) @map("sort_order")
-  createdAt     DateTime     @default(now()) @map("created_at")
-  updatedAt     DateTime     @updatedAt @map("updated_at")
+  id              String          @id @default(uuid())
+  branchId        String          @map("branch_id")
+  branch          Branch          @relation(fields: [branchId], references: [id])
+  categoryId      String          @map("category_id")
+  category        MenuCategory    @relation(fields: [categoryId], references: [id])
+  nameEn          String          @map("name_en")
+  nameAm          String?         @map("name_am")
+  descriptionEn   String?         @map("description_en")
+  descriptionAm   String?         @map("description_am")
+  basePrice       Int             @map("base_price")
+  isAvailable     Boolean         @default(true) @map("is_available")
+  calories        Int?
+  tags            String[]        @default([])
+  sortOrder       Int             @default(0) @map("sort_order")
+  /// Estimated prep time — used to flag a kitchen-queue order as running
+  /// late (elapsed since `preparingAt` vs. the max across its items).
+  prepTimeSeconds Int             @default(180) @map("prep_time_seconds")
+  stationId       String?         @map("station_id")
+  station         KitchenStation? @relation(fields: [stationId], references: [id], onDelete: SetNull)
+  createdAt       DateTime        @default(now()) @map("created_at")
+  updatedAt       DateTime        @updatedAt @map("updated_at")
 
   images             MenuItemImage[]
   modifierGroupLinks MenuItemModifierGroup[]
   cartItems          CartItem[]
   orderItems         OrderItem[]
+  recipeIngredients  RecipeIngredient[]
 
   @@index([branchId, categoryId])
   @@index([branchId, isAvailable])
+  @@index([stationId])
   @@map("menu_items")
 }
 
@@ -322,7 +358,9 @@ model InventoryItem {
   createdAt        DateTime      @default(now()) @map("created_at")
   updatedAt        DateTime      @updatedAt @map("updated_at")
 
-  transactions InventoryTransaction[]
+  transactions       InventoryTransaction[]
+  recipeIngredients  RecipeIngredient[]
+  purchaseOrderLines PurchaseOrderLine[]
 
   @@index([branchId])
   @@map("inventory_items")
@@ -515,6 +553,7 @@ model Order {
   notes          String?
 
   placedAt    DateTime  @default(now()) @map("placed_at")
+  preparingAt DateTime? @map("preparing_at")
   confirmedAt DateTime? @map("confirmed_at")
   readyAt     DateTime? @map("ready_at")
   deliveredAt DateTime? @map("delivered_at")
@@ -528,6 +567,7 @@ model Order {
   payments         Payment[]
   couponRedemption CouponRedemption?
   loyaltyEntries   LoyaltyLedger[]
+  delivery         Delivery?
 
   @@index([branchId, status, createdAt])
   @@index([userId, createdAt])
@@ -535,21 +575,27 @@ model Order {
 }
 
 model OrderItem {
-  id           String   @id @default(uuid())
-  orderId      String   @map("order_id")
-  order        Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  menuItemId   String   @map("menu_item_id")
-  menuItem     MenuItem @relation(fields: [menuItemId], references: [id])
-  nameSnapshot String   @map("name_snapshot")
-  unitPrice    Int      @map("unit_price")
-  quantity     Int
-  lineTotal    Int      @map("line_total")
-  notes        String?
-  createdAt    DateTime @default(now()) @map("created_at")
+  id              String   @id @default(uuid())
+  orderId         String   @map("order_id")
+  order           Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  menuItemId      String   @map("menu_item_id")
+  menuItem        MenuItem @relation(fields: [menuItemId], references: [id])
+  nameSnapshot    String   @map("name_snapshot")
+  unitPrice       Int      @map("unit_price")
+  quantity        Int
+  lineTotal       Int      @map("line_total")
+  notes           String?
+  /// Snapshotted from the menu item at order time — KDS station routing
+  /// and lateness detection stay stable even if the item's own station or
+  /// estimated prep time changes later.
+  stationId       String?  @map("station_id")
+  prepTimeSeconds Int      @map("prep_time_seconds")
+  createdAt       DateTime @default(now()) @map("created_at")
 
   modifiers OrderItemModifier[]
 
   @@index([orderId])
+  @@index([stationId])
   @@map("order_items")
 }
 
@@ -698,4 +744,213 @@ model NotificationLog {
 
   @@index([userId, createdAt])
   @@map("notification_logs")
+}
+
+// ---------------------------------------------------------------------------
+// Kitchen (Phase 3)
+// ---------------------------------------------------------------------------
+
+/// A physical prep station (e.g. "Cold Bar", "Grill", "Assembly"). Menu items
+/// optionally route to one; the kitchen queue can filter to a single
+/// station's display.
+model KitchenStation {
+  id        String   @id @default(uuid())
+  branchId  String   @map("branch_id")
+  branch    Branch   @relation(fields: [branchId], references: [id])
+  name      String
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  menuItems MenuItem[]
+
+  @@index([branchId])
+  @@map("kitchen_stations")
+}
+
+// ---------------------------------------------------------------------------
+// Delivery (Phase 3)
+// ---------------------------------------------------------------------------
+
+/// 1:1 extension of a User with role DRIVER — kept separate from `users`
+/// rather than adding driver-only columns there, same reasoning as keeping
+/// staff/customer concerns off shared columns.
+model DriverProfile {
+  userId       String    @id @map("user_id")
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  vehicleType  String    @map("vehicle_type")
+  licensePlate String?   @map("license_plate")
+  isOnline     Boolean   @default(false) @map("is_online")
+  currentLat   Decimal?  @map("current_lat") @db.Decimal(9, 6)
+  currentLng   Decimal?  @map("current_lng") @db.Decimal(9, 6)
+  lastPingAt   DateTime? @map("last_ping_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  @@map("driver_profiles")
+}
+
+/// Circular catchment (center + radius) rather than a GeoJSON polygon —
+/// no PostGIS dependency, and haversine-distance-from-center is sufficient
+/// at single-branch delivery-radius scale. Revisit only if irregular
+/// (non-circular) coverage areas are actually needed.
+model DeliveryZone {
+  id        String   @id @default(uuid())
+  branchId  String   @map("branch_id")
+  branch    Branch   @relation(fields: [branchId], references: [id])
+  name      String
+  centerLat Decimal  @map("center_lat") @db.Decimal(9, 6)
+  centerLng Decimal  @map("center_lng") @db.Decimal(9, 6)
+  radiusKm  Decimal  @map("radius_km") @db.Decimal(6, 2)
+  baseFee   Int      @map("base_fee")
+  perKmFee  Int      @default(0) @map("per_km_fee")
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  deliveries Delivery[]
+
+  @@index([branchId])
+  @@map("delivery_zones")
+}
+
+model Delivery {
+  id          String         @id @default(uuid())
+  orderId     String         @unique @map("order_id")
+  order       Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  branchId    String         @map("branch_id")
+  branch      Branch         @relation(fields: [branchId], references: [id])
+  driverId    String?        @map("driver_id")
+  driver      User?          @relation(fields: [driverId], references: [id])
+  zoneId      String?        @map("zone_id")
+  zone        DeliveryZone?  @relation(fields: [zoneId], references: [id], onDelete: SetNull)
+  status      DeliveryStatus @default(UNASSIGNED)
+  distanceKm  Decimal?       @map("distance_km") @db.Decimal(6, 2)
+  fee         Int
+  assignedAt  DateTime?      @map("assigned_at")
+  pickedUpAt  DateTime?      @map("picked_up_at")
+  deliveredAt DateTime?      @map("delivered_at")
+  createdAt   DateTime       @default(now()) @map("created_at")
+  updatedAt   DateTime       @updatedAt @map("updated_at")
+
+  trackingPings DeliveryTrackingPing[]
+
+  @@index([branchId, status])
+  @@index([driverId])
+  @@map("deliveries")
+}
+
+/// Append-only GPS trail — short retention in practice (e.g. 30 days),
+/// used for the live map and post-hoc SLA analysis.
+model DeliveryTrackingPing {
+  id         String   @id @default(uuid())
+  deliveryId String   @map("delivery_id")
+  delivery   Delivery @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+  lat        Decimal  @db.Decimal(9, 6)
+  lng        Decimal  @db.Decimal(9, 6)
+  recordedAt DateTime @default(now()) @map("recorded_at")
+
+  @@index([deliveryId, recordedAt])
+  @@map("delivery_tracking_pings")
+}
+
+// ---------------------------------------------------------------------------
+// Recipes & purchasing (Phase 3)
+// ---------------------------------------------------------------------------
+
+/// Menu item -> ingredient mapping. Drives automatic inventory deduction on
+/// `order.paid` (see OrdersModule/InventoryModule event wiring) — a menu
+/// item with no rows here simply doesn't deduct anything, so this can be
+/// filled in incrementally without breaking existing items.
+model RecipeIngredient {
+  id              String        @id @default(uuid())
+  menuItemId      String        @map("menu_item_id")
+  menuItem        MenuItem      @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  inventoryItemId String        @map("inventory_item_id")
+  inventoryItem   InventoryItem @relation(fields: [inventoryItemId], references: [id])
+  quantityPerUnit Decimal       @map("quantity_per_unit") @db.Decimal(12, 3)
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+
+  @@unique([menuItemId, inventoryItemId])
+  @@index([inventoryItemId])
+  @@map("recipe_ingredients")
+}
+
+model Supplier {
+  id          String   @id @default(uuid())
+  branchId    String   @map("branch_id")
+  branch      Branch   @relation(fields: [branchId], references: [id])
+  name        String
+  contactName String?  @map("contact_name")
+  phone       String?
+  email       String?
+  address     String?
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  purchaseOrders PurchaseOrder[]
+
+  @@index([branchId])
+  @@map("suppliers")
+}
+
+model PurchaseOrder {
+  id              String              @id @default(uuid())
+  branchId        String              @map("branch_id")
+  branch          Branch              @relation(fields: [branchId], references: [id])
+  supplierId      String              @map("supplier_id")
+  supplier        Supplier            @relation(fields: [supplierId], references: [id])
+  status          PurchaseOrderStatus @default(DRAFT)
+  notes           String?
+  createdByUserId String?             @map("created_by_user_id")
+  createdByUser   User?               @relation(fields: [createdByUserId], references: [id])
+  submittedAt     DateTime?           @map("submitted_at")
+  receivedAt      DateTime?           @map("received_at")
+  createdAt       DateTime            @default(now()) @map("created_at")
+  updatedAt       DateTime            @updatedAt @map("updated_at")
+
+  lines PurchaseOrderLine[]
+
+  @@index([branchId, status])
+  @@map("purchase_orders")
+}
+
+model PurchaseOrderLine {
+  id               String        @id @default(uuid())
+  purchaseOrderId  String        @map("purchase_order_id")
+  purchaseOrder    PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  inventoryItemId  String        @map("inventory_item_id")
+  inventoryItem    InventoryItem @relation(fields: [inventoryItemId], references: [id])
+  quantityOrdered  Decimal       @map("quantity_ordered") @db.Decimal(12, 3)
+  unitCost         Int           @map("unit_cost")
+  quantityReceived Decimal?      @map("quantity_received") @db.Decimal(12, 3)
+
+  @@index([purchaseOrderId])
+  @@map("purchase_order_lines")
+}
+
+// ---------------------------------------------------------------------------
+// Audit log (Phase 3)
+// ---------------------------------------------------------------------------
+
+/// Written by AuditLogInterceptor for every mutating (POST/PATCH/PUT/DELETE)
+/// request on a controller tagged @Auditable(...) — captures who did what
+/// to which entity and the resulting state. Deliberately "after" state only
+/// (no pre-fetched "before" diff) to avoid an extra read on every mutation;
+/// see docs/API_DESIGN.md for the exact coverage list.
+model AuditLog {
+  id          String   @id @default(uuid())
+  actorUserId String?  @map("actor_user_id")
+  actorUser   User?    @relation(fields: [actorUserId], references: [id])
+  action      String
+  entityType  String   @map("entity_type")
+  entityId    String?  @map("entity_id")
+  after       Json?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([entityType, entityId])
+  @@index([actorUserId, createdAt])
+  @@map("audit_logs")
 }

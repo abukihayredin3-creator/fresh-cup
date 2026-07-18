@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Param, Patch, Post } from "@nestjs/common";
 import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { UserRole } from "@prisma/client";
+import { Auditable } from "../../common/audit/auditable.decorator";
 import { Public } from "../../common/decorators/public.decorator";
 import { Roles } from "../../common/decorators/roles.decorator";
 import { BranchesService } from "./branches.service";
@@ -10,6 +11,7 @@ import { UpdateBranchDto } from "./dto/update-branch.dto";
 
 @ApiTags("branches")
 @Controller("branches")
+@Auditable("Branch")
 export class BranchesController {
   constructor(private readonly branchesService: BranchesService) {}
 

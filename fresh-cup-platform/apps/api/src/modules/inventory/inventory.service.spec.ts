@@ -5,6 +5,7 @@ import {
   UserRole,
   type InventoryItem,
 } from "@prisma/client";
+import type { EventEmitter2 } from "@nestjs/event-emitter";
 import type { RequestUser } from "../../common/types/request-user.interface";
 import type { PrismaService } from "../../database/prisma.service";
 import { InventoryService } from "./inventory.service";
@@ -16,6 +17,7 @@ describe("InventoryService", () => {
     inventoryTransaction: { create: jest.Mock };
     $transaction: jest.Mock;
   };
+  let eventEmitter: { emitAsync: jest.Mock };
 
   const branchId = "branch-1";
   const manager: RequestUser = { id: "manager-1", role: UserRole.MANAGER, branchId };
@@ -37,7 +39,11 @@ describe("InventoryService", () => {
       inventoryTransaction: { create: jest.fn() },
       $transaction: jest.fn(),
     };
-    service = new InventoryService(prisma as unknown as PrismaService);
+    eventEmitter = { emitAsync: jest.fn() };
+    service = new InventoryService(
+      prisma as unknown as PrismaService,
+      eventEmitter as unknown as EventEmitter2,
+    );
   });
 
   describe("adjustStock", () => {

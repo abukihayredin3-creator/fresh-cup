@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { JwtModule } from "@nestjs/jwt";
 import type { EnvironmentVariables } from "../common/config/env.validation";
+import { DeliveryGateway } from "./delivery.gateway";
 import { OrdersGateway } from "./orders.gateway";
 
 @Module({
@@ -13,6 +14,6 @@ import { OrdersGateway } from "./orders.gateway";
       }),
     }),
   ],
-  providers: [OrdersGateway],
+  providers: [OrdersGateway, DeliveryGateway],
 })
 export class WebsocketsModule {}

@@ -62,4 +62,18 @@ export class CreateMenuItemDto {
   @IsInt()
   @Min(0)
   sortOrder?: number;
+
+  @ApiPropertyOptional({
+    default: 180,
+    description: "Estimated prep time in seconds — used for kitchen-queue lateness flags",
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  prepTimeSeconds?: number;
+
+  @ApiPropertyOptional({ description: "Kitchen station that prepares this item" })
+  @IsOptional()
+  @IsUUID()
+  stationId?: string;
 }

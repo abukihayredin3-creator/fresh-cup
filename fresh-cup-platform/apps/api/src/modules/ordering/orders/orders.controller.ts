@@ -18,7 +18,7 @@ import { CancelOrderDto } from "./dto/cancel-order.dto";
 import { CreateOrderDto } from "./dto/create-order.dto";
 import { KitchenQueueQueryDto } from "./dto/kitchen-queue-query.dto";
 import { ListOrdersQueryDto } from "./dto/list-orders-query.dto";
-import { OrderResponseDto } from "./dto/order-response.dto";
+import { KitchenQueueEntryResponseDto, OrderResponseDto } from "./dto/order-response.dto";
 import { UpdateOrderStatusDto } from "./dto/update-order-status.dto";
 import { OrdersService } from "./orders.service";
 
@@ -98,12 +98,15 @@ export class OrdersController {
 
   @Get("admin/orders/kitchen-queue")
   @Roles(UserRole.STAFF, UserRole.MANAGER, UserRole.ADMIN)
-  @ApiOperation({ summary: "Confirmed/preparing orders for a branch, oldest first (staff+)" })
-  @ApiOkResponse({ type: OrderResponseDto, isArray: true })
+  @ApiOperation({
+    summary:
+      "Confirmed/preparing orders for a branch, oldest first, with live prep timers (staff+)",
+  })
+  @ApiOkResponse({ type: KitchenQueueEntryResponseDto, isArray: true })
   kitchenQueue(
     @CurrentUser() actor: RequestUser,
     @Query() query: KitchenQueueQueryDto,
-  ): Promise<OrderResponseDto[]> {
-    return this.ordersService.kitchenQueue(actor, query.branchId);
+  ): Promise<KitchenQueueEntryResponseDto[]> {
+    return this.ordersService.kitchenQueue(actor, query.branchId, query.stationId);
   }
 }

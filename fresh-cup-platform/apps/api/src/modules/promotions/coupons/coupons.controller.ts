@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Param, Patch, Post, Query } from "@nestjs/common";
 import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { UserRole } from "@prisma/client";
+import { Auditable } from "../../../common/audit/auditable.decorator";
 import { CurrentUser } from "../../../common/decorators/current-user.decorator";
 import { Roles } from "../../../common/decorators/roles.decorator";
 import type { RequestUser } from "../../../common/types/request-user.interface";
@@ -55,6 +56,7 @@ export class CouponsController {
   @Post("admin/coupons")
   @Roles(UserRole.MANAGER, UserRole.ADMIN)
   @ApiBearerAuth()
+  @Auditable("Coupon")
   @ApiOperation({ summary: "Create a coupon (manager/admin)" })
   @ApiOkResponse({ type: CouponResponseDto })
   async create(@Body() dto: CreateCouponDto): Promise<CouponResponseDto> {
@@ -65,6 +67,7 @@ export class CouponsController {
   @Patch("admin/coupons/:id")
   @Roles(UserRole.MANAGER, UserRole.ADMIN)
   @ApiBearerAuth()
+  @Auditable("Coupon")
   @ApiOperation({ summary: "Update a coupon (manager/admin)" })
   @ApiOkResponse({ type: CouponResponseDto })
   async update(@Param("id") id: string, @Body() dto: UpdateCouponDto): Promise<CouponResponseDto> {

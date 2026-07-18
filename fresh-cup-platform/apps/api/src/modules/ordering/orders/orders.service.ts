@@ -20,12 +20,13 @@ import type { RequestUser } from "../../../common/types/request-user.interface";
 import { PrismaService } from "../../../database/prisma.service";
 import { MenuItemsService } from "../../catalog/menu-items/menu-items.service";
 import { CouponsService } from "../../promotions/coupons/coupons.service";
+import { DeliveryZonesService, type ZoneMatch } from "../../delivery/zones/delivery-zones.service";
 import { CartService } from "../cart/cart.service";
 import { TablesService } from "../tables/tables.service";
 import type { CancelOrderDto } from "./dto/cancel-order.dto";
 import type { CreateOrderDto } from "./dto/create-order.dto";
 import type { ListOrdersQueryDto } from "./dto/list-orders-query.dto";
-import type { OrderResponseDto } from "./dto/order-response.dto";
+import type { KitchenQueueEntryResponseDto, OrderResponseDto } from "./dto/order-response.dto";
 import type { OrderStatusHistoryResponseDto } from "./dto/order-status-history-response.dto";
 import type { UpdateOrderStatusDto } from "./dto/update-order-status.dto";
 import {
@@ -42,6 +43,7 @@ type OrderDetail = Prisma.OrderGetPayload<{ include: typeof WITH_ITEMS }>;
 
 const STATUS_TIMESTAMP_FIELD: Partial<Record<OrderStatus, keyof Prisma.OrderUpdateInput>> = {
   [OrderStatus.CONFIRMED]: "confirmedAt",
+  [OrderStatus.PREPARING]: "preparingAt",
   [OrderStatus.READY]: "readyAt",
   [OrderStatus.DELIVERED]: "deliveredAt",
   [OrderStatus.CANCELLED]: "cancelledAt",
@@ -56,6 +58,7 @@ export class OrdersService {
     private readonly menuItemsService: MenuItemsService,
     private readonly tablesService: TablesService,
     private readonly couponsService: CouponsService,
+    private readonly deliveryZonesService: DeliveryZonesService,
     private readonly eventEmitter: EventEmitter2,
   ) {}
 
@@ -105,6 +108,8 @@ export class OrdersService {
         quantity: item.quantity,
         lineTotal,
         notes: item.notes,
+        stationId: freshMenuItem.stationId,
+        prepTimeSeconds: freshMenuItem.prepTimeSeconds,
         modifiers: {
           create: selections.map((s) => ({
             modifierOption: { connect: { id: s.modifierOptionId } },
@@ -121,6 +126,7 @@ export class OrdersService {
     let deliveryLat: Prisma.Decimal | null = null;
     let deliveryLng: Prisma.Decimal | null = null;
     let deliveryFee = 0;
+    let zoneMatch: ZoneMatch | null = null;
 
     if (dto.orderType === OrderType.DINE_IN) {
       if (!dto.tableId) {
@@ -143,7 +149,16 @@ export class OrdersService {
       deliveryAddressText = address.freeText;
       deliveryLat = address.lat;
       deliveryLng = address.lng;
-      deliveryFee = this.config.get("DELIVERY_FLAT_FEE", { infer: true });
+      if (address.lat !== null && address.lng !== null) {
+        zoneMatch = await this.deliveryZonesService.match(
+          dto.branchId,
+          Number(address.lat),
+          Number(address.lng),
+        );
+        deliveryFee = zoneMatch.fee;
+      } else {
+        deliveryFee = this.config.get("DELIVERY_FLAT_FEE", { infer: true });
+      }
     }
 
     const taxRate = this.config.get("TAX_RATE_PERCENT", { infer: true });
@@ -193,6 +208,18 @@ export class OrdersService {
           statusHistory: {
             create: { toStatus: OrderStatus.PENDING_PAYMENT, changedByUserId: actor.id },
           },
+          ...(dto.orderType === OrderType.DELIVERY
+            ? {
+                delivery: {
+                  create: {
+                    branchId: dto.branchId,
+                    zoneId: zoneMatch?.zone?.id,
+                    distanceKm: zoneMatch?.distanceKm,
+                    fee: deliveryFee,
+                  },
+                },
+              }
+            : {}),
         },
         include: WITH_ITEMS,
       });
@@ -266,14 +293,22 @@ export class OrdersService {
     return { ...page, items: page.items.map((o) => this.toResponse(o)) };
   }
 
-  async kitchenQueue(actor: RequestUser, branchId: string): Promise<OrderResponseDto[]> {
+  async kitchenQueue(
+    actor: RequestUser,
+    branchId: string,
+    stationId?: string,
+  ): Promise<KitchenQueueEntryResponseDto[]> {
     assertBranchAccess(actor, branchId);
     const orders = await this.prisma.order.findMany({
-      where: { branchId, status: { in: [OrderStatus.CONFIRMED, OrderStatus.PREPARING] } },
+      where: {
+        branchId,
+        status: { in: [OrderStatus.CONFIRMED, OrderStatus.PREPARING] },
+        ...(stationId ? { items: { some: { stationId } } } : {}),
+      },
       orderBy: { placedAt: "asc" },
       include: WITH_ITEMS,
     });
-    return orders.map((o) => this.toResponse(o));
+    return orders.map((o) => this.toKitchenQueueEntry(o));
   }
 
   async updateStatus(
@@ -332,6 +367,23 @@ export class OrdersService {
       return;
     }
     await this.transitionStatus(order, OrderStatus.CONFIRMED, null, "Payment confirmed");
+  }
+
+  /** Called by DeliveriesService when a driver marks a delivery picked up. */
+  async markOutForDelivery(orderId: string, driverId: string): Promise<void> {
+    const order = await this.findDetailOrThrow(orderId);
+    await this.transitionStatus(
+      order,
+      OrderStatus.OUT_FOR_DELIVERY,
+      driverId,
+      "Picked up by driver",
+    );
+  }
+
+  /** Called by DeliveriesService when a driver marks a delivery delivered. */
+  async markDelivered(orderId: string, driverId: string): Promise<void> {
+    const order = await this.findDetailOrThrow(orderId);
+    await this.transitionStatus(order, OrderStatus.DELIVERED, driverId, "Delivered by driver");
   }
 
   private async transitionStatus(
@@ -416,6 +468,7 @@ export class OrdersService {
       couponId: order.couponId,
       notes: order.notes,
       placedAt: order.placedAt,
+      preparingAt: order.preparingAt,
       confirmedAt: order.confirmedAt,
       readyAt: order.readyAt,
       deliveredAt: order.deliveredAt,
@@ -430,12 +483,27 @@ export class OrdersService {
         quantity: item.quantity,
         lineTotal: item.lineTotal,
         notes: item.notes,
+        stationId: item.stationId,
+        prepTimeSeconds: item.prepTimeSeconds,
         modifiers: item.modifiers.map((m) => ({
           modifierOptionId: m.modifierOptionId,
           nameSnapshot: m.nameSnapshot,
           priceDeltaSnapshot: m.priceDeltaSnapshot,
         })),
       })),
+    };
+  }
+
+  private toKitchenQueueEntry(order: OrderDetail): KitchenQueueEntryResponseDto {
+    const base = this.toResponse(order);
+    const elapsedSeconds = order.preparingAt
+      ? Math.floor((Date.now() - order.preparingAt.getTime()) / 1000)
+      : null;
+    const targetSeconds = order.items.reduce((max, item) => Math.max(max, item.prepTimeSeconds), 0);
+    return {
+      ...base,
+      elapsedSeconds,
+      isLate: elapsedSeconds !== null && elapsedSeconds > targetSeconds,
     };
   }
 }

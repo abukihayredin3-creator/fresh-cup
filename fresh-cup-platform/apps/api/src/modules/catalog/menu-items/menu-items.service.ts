@@ -118,6 +118,8 @@ export class MenuItemsService {
       calories: item.calories,
       tags: item.tags,
       sortOrder: item.sortOrder,
+      prepTimeSeconds: item.prepTimeSeconds,
+      stationId: item.stationId,
       images: item.images.map((image) => ({
         id: image.id,
         url: image.url,

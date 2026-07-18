@@ -12,6 +12,7 @@ import {
 } from "@nestjs/common";
 import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { UserRole } from "@prisma/client";
+import { Auditable } from "../../../common/audit/auditable.decorator";
 import { CurrentUser } from "../../../common/decorators/current-user.decorator";
 import { Public } from "../../../common/decorators/public.decorator";
 import { Roles } from "../../../common/decorators/roles.decorator";
@@ -24,6 +25,7 @@ import { MenuCategoriesService } from "./menu-categories.service";
 
 @ApiTags("catalog")
 @Controller()
+@Auditable("MenuCategory")
 export class MenuCategoriesController {
   constructor(private readonly categoriesService: MenuCategoriesService) {}
 

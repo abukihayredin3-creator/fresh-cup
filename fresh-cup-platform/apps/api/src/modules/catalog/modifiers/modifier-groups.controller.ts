@@ -12,6 +12,7 @@ import {
 } from "@nestjs/common";
 import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { UserRole } from "@prisma/client";
+import { Auditable } from "../../../common/audit/auditable.decorator";
 import { CurrentUser } from "../../../common/decorators/current-user.decorator";
 import { Roles } from "../../../common/decorators/roles.decorator";
 import type { RequestUser } from "../../../common/types/request-user.interface";
@@ -27,6 +28,7 @@ import { ModifierGroupsService } from "./modifier-groups.service";
 @Controller("admin/modifier-groups")
 @Roles(UserRole.STAFF, UserRole.MANAGER, UserRole.ADMIN)
 @ApiBearerAuth()
+@Auditable("ModifierGroup")
 export class ModifierGroupsController {
   constructor(private readonly modifierGroupsService: ModifierGroupsService) {}
 

@@ -39,6 +39,12 @@ export class MenuItemResponseDto {
   @ApiProperty()
   sortOrder!: number;
 
+  @ApiProperty({ description: "Estimated prep time in seconds" })
+  prepTimeSeconds!: number;
+
+  @ApiProperty({ nullable: true })
+  stationId!: string | null;
+
   @ApiProperty({ type: [MenuItemImageResponseDto] })
   images!: MenuItemImageResponseDto[];
 

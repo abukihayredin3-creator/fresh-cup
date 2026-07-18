@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Param, Patch, Post, Query } from "@nestjs/common";
 import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { UserRole } from "@prisma/client";
+import { Auditable } from "../../common/audit/auditable.decorator";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { Roles } from "../../common/decorators/roles.decorator";
 import type { RequestUser } from "../../common/types/request-user.interface";
@@ -14,6 +15,7 @@ import { UsersService } from "./users.service";
 @ApiTags("users")
 @ApiBearerAuth()
 @Controller()
+@Auditable("User")
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 

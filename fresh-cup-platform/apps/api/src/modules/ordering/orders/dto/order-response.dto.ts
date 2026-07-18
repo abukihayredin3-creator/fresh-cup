@@ -34,6 +34,12 @@ export class OrderItemResponseDto {
   @ApiProperty({ nullable: true })
   notes!: string | null;
 
+  @ApiProperty({ nullable: true, description: "Kitchen station snapshotted at order time" })
+  stationId!: string | null;
+
+  @ApiProperty({ description: "Estimated prep time in seconds, snapshotted at order time" })
+  prepTimeSeconds!: number;
+
   @ApiProperty({ type: [OrderItemModifierResponseDto] })
   modifiers!: OrderItemModifierResponseDto[];
 }
@@ -91,6 +97,9 @@ export class OrderResponseDto {
   placedAt!: Date;
 
   @ApiProperty({ nullable: true })
+  preparingAt!: Date | null;
+
+  @ApiProperty({ nullable: true })
   confirmedAt!: Date | null;
 
   @ApiProperty({ nullable: true })
@@ -110,4 +119,18 @@ export class OrderResponseDto {
 
   @ApiProperty({ type: [OrderItemResponseDto] })
   items!: OrderItemResponseDto[];
+}
+
+/** Kitchen-queue view: adds a live timer computed from `preparingAt` vs. the max item prep time. */
+export class KitchenQueueEntryResponseDto extends OrderResponseDto {
+  @ApiProperty({
+    nullable: true,
+    description: "Seconds since preparingAt; null if not yet preparing",
+  })
+  elapsedSeconds!: number | null;
+
+  @ApiProperty({
+    description: "elapsedSeconds exceeds the max prepTimeSeconds across this order's items",
+  })
+  isLate!: boolean;
 }

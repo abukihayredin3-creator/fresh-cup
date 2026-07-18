@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Param, Patch, Post, Query } from "@nestjs/common";
 import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { UserRole } from "@prisma/client";
+import { Auditable } from "../../common/audit/auditable.decorator";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { Roles } from "../../common/decorators/roles.decorator";
 import type { RequestUser } from "../../common/types/request-user.interface";
@@ -15,6 +16,7 @@ import { InventoryService } from "./inventory.service";
 @ApiBearerAuth()
 @Controller("admin/inventory")
 @Roles(UserRole.STAFF, UserRole.MANAGER, UserRole.ADMIN)
+@Auditable("InventoryItem")
 export class InventoryController {
   constructor(private readonly inventoryService: InventoryService) {}
 
@@ -23,6 +25,14 @@ export class InventoryController {
   async list(@Query() query: ListInventoryItemsQueryDto) {
     const page = await this.inventoryService.list(query);
     return { ...page, items: page.items.map((i) => this.inventoryService.toResponse(i)) };
+  }
+
+  @Get("low-stock")
+  @ApiOperation({ summary: "List items at or below their reorder threshold (staff+)" })
+  @ApiOkResponse({ type: InventoryItemResponseDto, isArray: true })
+  async lowStock(@Query() query: ListInventoryItemsQueryDto): Promise<InventoryItemResponseDto[]> {
+    const items = await this.inventoryService.lowStock(query);
+    return items.map((i) => this.inventoryService.toResponse(i));
   }
 
   @Get(":id")
