@@ -23,6 +23,7 @@ import json
 
 from ai_brain import AccountRiskSettings, AIDecision, CandidateTrade, TradeRecord
 
+from bridge import risk_gate
 from bridge.config import BridgeConfig
 from bridge.schemas import PredictRequest, PredictResponse, TradeResultRequest
 from bridge.smc_features import StructureSignals
@@ -161,6 +162,19 @@ def context_from_candidate(candidate: CandidateTrade, decision: AIDecision) -> P
         risk_reward_planned=candidate.risk_reward_planned,
         confidence_at_entry=decision.final_confidence,
     )
+
+
+def refine_rejection_reason(reason: str, decision: AIDecision) -> str:
+    """``risk_gate`` doesn't know ai_brain's specific warning text; this
+    turns its generic "insufficient data" reason into the more specific
+    ``ai_brain_disabled`` when that's actually why, for clearer
+    EA-facing telemetry.
+    """
+    if reason == risk_gate.REASON_AI_INSUFFICIENT_DATA and any(
+        "disabled" in w.lower() for w in decision.warnings
+    ):
+        return "ai_brain_disabled"
+    return reason
 
 
 def build_trade_record(result: TradeResultRequest, context: PendingTradeContext | None) -> TradeRecord:

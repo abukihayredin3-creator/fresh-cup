@@ -73,6 +73,39 @@ def tmp_bridge_config(tmp_path, monkeypatch):
     yield config_module.CONFIG
 
 
+@pytest.fixture
+def tmp_ai_brain_config(tmp_path):
+    """Isolate ai_brain's own CONFIG into a subdirectory of the same
+    tmp_path used for bridge isolation, so end-to-end bridge tests
+    exercise the real ai_brain package without touching real
+    data/models/logs. ai_brain is never modified — this only points its
+    existing test-isolation hook (AIBrainConfig(base_dir=...)) at a tmp
+    dir, the same technique ai_brain's own tests/conftest.py uses.
+    """
+    from ai_brain.config import CONFIG as AI_BRAIN_CONFIG
+    from ai_brain.config import AIBrainConfig
+    from ai_brain.utils import ensure_directories
+
+    fresh = AIBrainConfig(base_dir=tmp_path / "ai_brain_data")
+    for key, value in vars(fresh).items():
+        setattr(AI_BRAIN_CONFIG, key, value)
+    AI_BRAIN_CONFIG.AI_BRAIN_ENABLED = True
+    ensure_directories()
+    yield AI_BRAIN_CONFIG
+
+
+@pytest.fixture
+def bridge_client(tmp_bridge_config, tmp_ai_brain_config):
+    """A TestClient against the real FastAPI app, with both the bridge
+    and ai_brain fully isolated into per-test tmp directories."""
+    from fastapi.testclient import TestClient
+
+    from bridge.app import app
+
+    with TestClient(app) as client:
+        yield client
+
+
 def reload_bridge_config(tmp_path) -> BridgeConfig:
     """Re-read YAML from ``tmp_path`` and apply it to the live CONFIG
     singleton — use after a test rewrites the YAML files mid-test."""

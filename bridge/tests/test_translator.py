@@ -253,6 +253,25 @@ def test_build_trade_record_uses_pending_context():
     assert notes["duration_seconds"] == 3600
 
 
+def test_refine_rejection_reason_detects_disabled_warning():
+    from bridge import risk_gate
+
+    decision = _fake_decision(warnings=["AI Brain is disabled."])
+    reason = translator.refine_rejection_reason(risk_gate.REASON_AI_INSUFFICIENT_DATA, decision)
+    assert reason == "ai_brain_disabled"
+
+
+def test_refine_rejection_reason_leaves_other_reasons_untouched():
+    from bridge import risk_gate
+
+    decision = _fake_decision(warnings=["Limited historical sample."])
+    reason = translator.refine_rejection_reason(risk_gate.REASON_AI_INSUFFICIENT_DATA, decision)
+    assert reason == risk_gate.REASON_AI_INSUFFICIENT_DATA
+
+    reason2 = translator.refine_rejection_reason(risk_gate.REASON_CONFIDENCE_BELOW_THRESHOLD, decision)
+    assert reason2 == risk_gate.REASON_CONFIDENCE_BELOW_THRESHOLD
+
+
 def test_build_trade_record_without_context_uses_safe_defaults():
     result = _trade_result()
     record = translator.build_trade_record(result, context=None)
