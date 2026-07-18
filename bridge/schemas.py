@@ -61,6 +61,12 @@ class PredictRequest(BaseModel):
     atr: float
     account: AccountInfo
     existing_positions: list[ExistingPosition] = Field(default_factory=list)
+    # Monetary value of a 1.0 price-unit move per standard lot for this
+    # symbol (MT5: SymbolInfoDouble(symbol, SYMBOL_TRADE_TICK_VALUE) scaled
+    # to a per-point basis) — needed to convert ai_brain's risk-percent
+    # recommendation into a concrete lot size. Optional: 0.0 means "unknown",
+    # and the bridge falls back to the configured default lot size.
+    point_value: float = 0.0
 
     @field_validator("symbol", mode="before")
     @classmethod
