@@ -12,7 +12,13 @@ admin, delivery, and mobile never hand-write request/response types.
 - Content type: `application/json`, except file uploads (`multipart/form-data`)
 - Errors: RFC 7807 `application/problem+json` — `{ type, title, status, detail, instance }`
 - Pagination: cursor-based — `?cursor=<opaque>&limit=20`, response includes `next_cursor`
-- Idempotency: `Idempotency-Key` header required on `POST /orders` and `POST /payments/*`; server deduplicates on that key for 24h
+- Idempotency: `Idempotency-Key` header required on `POST /orders`; a retried
+  request with the same key replays the original order instead of creating
+  a duplicate (deduped indefinitely on the unique `orders.idempotency_key`
+  column, not a 24h window). `POST /payments/initiate` is not yet
+  idempotency-keyed — calling it twice for the same still-pending order
+  creates two payment attempts; only one can settle the order, but this is
+  a known gap worth closing before a real Chapa key is live in production.
 - Money: always integer minor units in request/response bodies (e.g. `4550` = 45.50 ETB), never floats
 - Timestamps: ISO 8601 UTC
 
@@ -74,6 +80,21 @@ endpoint, so the public site can page items independently of categories.
 | PATCH             | `/admin/menu-items/{id}/availability`                                      | `staff`+ — frontline staff can 86 an item without full edit rights |
 | POST/PATCH/DELETE | `/admin/menu-items/{id}/images`, `/admin/menu-items/{id}/images/{imageId}` | `manager`/`admin`; URL-based, no upload pipeline yet               |
 
+### Product modifiers
+
+Implemented in Phase 2. A modifier group (e.g. "Size", SINGLE-select; "Add-ons",
+MULTIPLE-select) is reusable across menu items; the attachment carries a
+per-item `isRequired`/`sortOrder` override. Every menu item response embeds
+its currently-orderable groups/options — that embedded shape is the
+cart/checkout customization contract, not an admin management view.
+
+| Method            | Path                                                                                        | Notes                                                        |
+| ----------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| GET/POST          | `/admin/modifier-groups`                                                                    | `staff`+ read, `manager`/`admin` write                       |
+| GET/PATCH/DELETE  | `/admin/modifier-groups/{id}`                                                               | `manager`/`admin`; DELETE soft-deletes (`isActive: false`)   |
+| POST/PATCH/DELETE | `/admin/modifier-groups/{id}/options`, `/admin/modifier-groups/{id}/options/{optionId}`     | `manager`/`admin`                                            |
+| POST/PATCH/DELETE | `/admin/menu-items/{id}/modifier-groups`, `/admin/menu-items/{id}/modifier-groups/{linkId}` | `manager`/`admin`; attach/update/detach a group from an item |
+
 ## Inventory (base ledger — recipe deduction is Phase 5)
 
 Implemented in Phase 1.
@@ -86,52 +107,126 @@ Implemented in Phase 1.
 | PATCH  | `/admin/inventory/{id}`        | `manager`/`admin`; stock itself isn't editable here — only `/adjust` changes it                  |
 | POST   | `/admin/inventory/{id}/adjust` | `staff`+; body: `{ delta, reason, note? }`; writes a ledger row, rejects if it would go negative |
 
+## Tables (QR dine-in)
+
+Implemented in Phase 2.
+
+| Method   | Path                               | Notes                                                                |
+| -------- | ---------------------------------- | -------------------------------------------------------------------- |
+| GET      | `/tables/{qrToken}`                | public; resolves a scanned QR to branch + table for dine-in ordering |
+| GET/POST | `/admin/tables`                    | `staff`+ read, `manager`/`admin` write                               |
+| PATCH    | `/admin/tables/{id}`               | `manager`/`admin`                                                    |
+| POST     | `/admin/tables/{id}/regenerate-qr` | `manager`/`admin`; invalidates the previously-printed QR code        |
+
+## Cart
+
+Implemented in Phase 2 — server-persisted so it survives across devices;
+one cart per (user, branch). Any authenticated user manages only their own,
+no role restriction. Checkout consumes and clears it.
+
+| Method | Path               | Notes                                                                                                           |
+| ------ | ------------------ | --------------------------------------------------------------------------------------------------------------- |
+| GET    | `/cart?branchId=`  | returns an empty virtual cart (not persisted) if nothing's been added yet                                       |
+| POST   | `/cart/items`      | body: `{ branchId, menuItemId, quantity?, notes?, modifierOptionIds? }`; merges into an identical existing line |
+| PATCH  | `/cart/items/{id}` | body: `{ quantity }`                                                                                            |
+| DELETE | `/cart/items/{id}` |                                                                                                                 |
+| DELETE | `/cart?branchId=`  | clears the whole cart for that branch                                                                           |
+
 ## Ordering
 
-| Method | Path                  | Notes                                                                                   |
-| ------ | --------------------- | --------------------------------------------------------------------------------------- |
-| POST   | `/orders`             | creates order in `pending_payment`; requires `Idempotency-Key`                          |
-| GET    | `/orders/{id}`        | owner, assigned rider, or staff of the branch only                                      |
-| GET    | `/orders`             | customer's own order history (paginated); staff variant filters by `branch_id`+`status` |
-| PATCH  | `/orders/{id}/status` | staff/kitchen only, enforces valid transitions                                          |
-| POST   | `/orders/{id}/cancel` | customer (only while `pending_payment`/`confirmed`) or staff                            |
-| GET    | `/tables/{qrToken}`   | resolves a scanned QR to branch + table for dine-in ordering                            |
+Implemented in Phase 2. `POST /orders` is "checkout" — it sources line
+items from the caller's persisted cart (not a body-provided item list),
+re-validating availability/modifiers/pricing against the live catalog
+before creating anything and clearing the cart in the same transaction.
+
+| Method | Path                          | Notes                                                                                                                                                              |
+| ------ | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| POST   | `/orders`                     | checkout from the cart; creates order in `pending_payment`; requires `Idempotency-Key`; body: `{ branchId, orderType, tableId?, addressId?, couponCode?, notes? }` |
+| GET    | `/orders/{id}`                | owner or staff of the branch only                                                                                                                                  |
+| GET    | `/orders`                     | customer's own order history (paginated); staff/manager auto-scoped to their own branch, admin filters by `branchId`+`status`                                      |
+| PATCH  | `/orders/{id}/status`         | staff+ only, enforces the valid-transition graph below; rejects `cancelled` (use `/cancel`)                                                                        |
+| POST   | `/orders/{id}/cancel`         | customer (only while `pending_payment`/`confirmed`) or staff+ (any non-terminal state)                                                                             |
+| GET    | `/orders/{id}/timeline`       | append-only status-change history, owner or staff of the branch                                                                                                    |
+| GET    | `/admin/orders/kitchen-queue` | staff+; `confirmed`+`preparing` orders for `branchId`, oldest first                                                                                                |
 
 ## Payments
 
-| Method | Path                       | Notes                                                                                 |
-| ------ | -------------------------- | ------------------------------------------------------------------------------------- |
-| POST   | `/payments/initiate`       | body: `{ order_id, method }` → returns Chapa checkout URL/reference                   |
-| POST   | `/payments/webhooks/chapa` | signature-verified server callback; transitions `payments.status` and `orders.status` |
-| POST   | `/payments/{id}/refund`    | admin only                                                                            |
+Implemented in Phase 2. `PaymentProvider` is a dependency-inverted
+interface (mirrors the Phase 1 `SmsProvider` pattern) with two
+implementations selected by `method`: Chapa (TeleBirr/CBE Birr/HelloCash/
+Amole/cards — one aggregator integration, see docs/ARCHITECTURE.md for why
+direct TeleBirr integration was rejected) and cash (pay-at-counter/on-
+delivery). With no `CHAPA_SECRET_KEY` configured, the Chapa provider
+fabricates a sandbox checkout reference instead of calling the real API.
 
-## Delivery
+| Method | Path                          | Notes                                                                                                                                                                           |
+| ------ | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| POST   | `/payments/initiate`          | body: `{ orderId, method }`; owner or staff+ of the order's branch; Chapa returns a checkout URL, cash confirms the order immediately (kitchen starts without waiting for cash) |
+| POST   | `/payments/webhooks/chapa`    | public, HMAC-signature-verified (unverified in sandbox mode with no `CHAPA_WEBHOOK_SECRET`); idempotent against retries; settles the payment and confirms the order             |
+| POST   | `/payments/{id}/confirm-cash` | staff+ of the order's branch; settles a cash payment once physically received — this, not order confirmation, is what triggers loyalty accrual                                  |
+| POST   | `/payments/{id}/refund`       | admin only; only a `succeeded` payment can be refunded                                                                                                                          |
+
+Loyalty accrual and the `order.paid` notification both fire off a payment
+reaching `succeeded`, never off order confirmation alone — a cash order is
+confirmed (kitchen starts) before the cash is actually collected, so tying
+accrual to confirmation would reward orders that are later no-shows.
+
+## Delivery (order type only — rider logistics are Phase 3)
+
+Phase 2 supports `orderType: DELIVERY` as a checkout option (address
+snapshot, flat-rate MVP fee) but not rider assignment/tracking. The
+following are Phase 3, unimplemented:
 
 | Method | Path                            | Notes                                                             |
 | ------ | ------------------------------- | ----------------------------------------------------------------- |
-| GET    | `/delivery/zones/{branchId}`    | zone polygons + fee rules, used for checkout fee calculation      |
+| GET    | `/delivery/zones/{branchId}`    | zone polygons + fee rules, replacing the Phase 2 flat rate        |
 | POST   | `/delivery/quote`               | body: `{ branch_id, lat, lng }` → `{ fee, eta_minutes, in_zone }` |
 | GET    | `/rider/deliveries`             | rider's assigned deliveries (`rider` role)                        |
 | PATCH  | `/rider/deliveries/{id}/status` | `picked_up`, `delivered`, `failed`                                |
 | POST   | `/rider/location`               | high-frequency location ping while online                         |
 | PATCH  | `/rider/availability`           | go online/offline                                                 |
 
-## Loyalty & promotions
+## Promotions (coupons)
 
-| Method | Path                | Notes                                                               |
-| ------ | ------------------- | ------------------------------------------------------------------- |
-| GET    | `/loyalty/me`       | balance, tier, history (own account)                                |
-| GET    | `/loyalty/rewards`  | redeemable rewards catalog                                          |
-| POST   | `/loyalty/redeem`   | body: `{ reward_id }`                                               |
-| POST   | `/coupons/validate` | body: `{ code, order_subtotal }` → discount preview before checkout |
+Implemented in Phase 2.
 
-## Inventory (staff only)
+| Method    | Path                  | Notes                                                                        |
+| --------- | --------------------- | ---------------------------------------------------------------------------- |
+| POST      | `/coupons/validate`   | authenticated; body: `{ code, subtotal }` → discount preview before checkout |
+| GET/POST  | `/admin/coupons`      | `manager`/`admin`                                                            |
+| GET/PATCH | `/admin/coupons/{id}` | `manager`/`admin`; code is immutable once created                            |
 
-| Method   | Path                           | Notes                                              |
-| -------- | ------------------------------ | -------------------------------------------------- |
-| GET      | `/admin/inventory`             | stock levels, low-stock flagged                    |
-| POST     | `/admin/inventory/{id}/adjust` | manual adjustment, writes `inventory_transactions` |
-| POST/GET | `/admin/purchase-orders`       | supplier restocking workflow                       |
+Redemption itself isn't a standalone endpoint — a coupon is redeemed by
+including `couponCode` at checkout (`POST /orders`), atomically with order
+creation, enforcing `minOrderTotal`/active-window/global and per-user
+redemption limits.
+
+## Loyalty
+
+Implemented in Phase 2 as accrual only — tiers, a rewards catalog, and a
+redemption flow are Phase 4.
+
+| Method | Path          | Notes                                                                                                                                   |
+| ------ | ------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/loyalty/me` | own balance + paginated accrual history; 1 point per `LOYALTY_MINOR_UNITS_PER_POINT` (default 1000 = 10 ETB) spent on a settled payment |
+
+## Notifications
+
+Implemented in Phase 2. SMS/email/push are each a dependency-inverted
+provider interface with a console (log-only) implementation pending real
+gateways (AfroMessage, an ESP, FCM). Every dispatch attempt — success or
+failure — is logged to `notification_logs`.
+
+| Method | Path                              | Notes                                           |
+| ------ | --------------------------------- | ----------------------------------------------- |
+| POST   | `/notifications/push-tokens`      | registers/updates a device token for the caller |
+| DELETE | `/notifications/push-tokens/{id}` | ownership-checked                               |
+
+## Inventory (purchase orders — staff only, Phase 5)
+
+| Method   | Path                     | Notes                                                 |
+| -------- | ------------------------ | ----------------------------------------------------- |
+| POST/GET | `/admin/purchase-orders` | supplier restocking workflow — Phase 5, unimplemented |
 
 ## Analytics (admin only)
 
@@ -143,15 +238,23 @@ Implemented in Phase 1.
 
 ## WebSocket namespaces
 
-| Namespace      | Who connects                                                          | Events                                                                      |
-| -------------- | --------------------------------------------------------------------- | --------------------------------------------------------------------------- |
-| `/ws/orders`   | customer (own order room `order:{id}`), kitchen (`branch:{id}` room)  | `order.status_changed`, `order.item_ready`                                  |
-| `/ws/delivery` | rider, customer tracking an active delivery, delivery-dashboard staff | `delivery.assigned`, `delivery.location_updated`, `delivery.status_changed` |
+`/ws/orders` is implemented in Phase 2 (single Nest instance only — the
+Socket.IO Redis adapter for horizontal scaling is deferred until a second
+API instance actually exists to justify it). `/ws/delivery` is Phase 3.
 
-Auth on connect via the same JWT (passed as a query param or in the
-`Authorization` header during the socket handshake); server joins the
-socket to rooms based on the token's user/branch/role, so a client only
-ever receives events it's authorized to see.
+| Namespace      | Who connects                                                                                                                                                                              | Events                                                                      |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `/ws/orders`   | customer (`order:{id}` room, joined explicitly via a `subscribeOrder` message after checkout), staff/manager (auto-joined to `branch:{id}` on connect), admin (`subscribeBranch` message) | `order.created`, `order.status_changed`                                     |
+| `/ws/delivery` | rider, customer tracking an active delivery, delivery-dashboard staff                                                                                                                     | `delivery.assigned`, `delivery.location_updated`, `delivery.status_changed` |
+
+Auth on connect via the same JWT, passed as `{ auth: { token } }` in the
+Socket.IO client's connect options (the standard socket.io-client
+credential mechanism) — an `Authorization` header or `?token=` query param
+also work as fallbacks. An invalid or missing token gets the socket
+connected then immediately disconnected by the server, rather than
+rejecting the handshake itself. `subscribeOrder`/`subscribeBranch` ack with
+`{ ok: false, error: "forbidden" | "not_found" | "unauthenticated" }` when
+the caller isn't allowed to join that room.
 
 ## Valid order status transitions
 
@@ -161,5 +264,13 @@ pending_payment → confirmed → preparing → ready ┬→ completed        (p
 any non-terminal state → cancelled
 ```
 
-Enforced server-side in the Ordering module; `PATCH /orders/{id}/status`
-rejects any transition not in this graph.
+Enforced server-side in `OrdersService`; `PATCH /orders/{id}/status`
+rejects any transition not in this graph, plus two order-type-aware rules
+`OrderStatus` alone can't express: `out_for_delivery`/`delivered` only
+apply to `orderType: DELIVERY`, and a delivery order can't skip straight
+from `ready` to `completed` — it must pass through both. `cancelled` is
+rejected on this endpoint entirely; use `POST /orders/{id}/cancel`, which
+additionally restricts customers (not staff) to cancelling only from
+`pending_payment`/`confirmed`. A cash payment's `POST /payments/initiate`
+drives `pending_payment → confirmed` directly (see Payments above) — the
+only status transition triggered outside these two endpoints.

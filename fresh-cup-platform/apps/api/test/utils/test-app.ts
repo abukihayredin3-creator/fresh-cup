@@ -23,7 +23,7 @@ export async function createTestApp(
   }
 
   const moduleFixture = await builder.compile();
-  const app = moduleFixture.createNestApplication();
+  const app = moduleFixture.createNestApplication({ rawBody: true });
   configureApp(app);
   await app.init();
 

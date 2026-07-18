@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { INestApplication } from "@nestjs/common";
-import type { UserRole } from "@prisma/client";
+import type { MenuCategory, MenuItem, UserRole } from "@prisma/client";
 import { type Branch } from "@prisma/client";
 import request from "supertest";
 import { hashPassword } from "../../src/common/crypto/password.util";
@@ -57,4 +57,49 @@ export async function loginAs(
     .send({ email, password })
     .expect(200);
   return response.body.accessToken as string;
+}
+
+/** Same OTP flow auth.e2e-spec.ts exercises directly — reused by every ordering-flow spec. */
+export async function loginAsNewCustomer(
+  app: INestApplication,
+  sms: { lastCodeFor(phone: string): string },
+): Promise<{ accessToken: string; userId: string; phone: string }> {
+  const phone = testPhone();
+  await request(app.getHttpServer()).post("/api/v1/auth/otp/request").send({ phone }).expect(204);
+  const code = sms.lastCodeFor(phone);
+  const response = await request(app.getHttpServer())
+    .post("/api/v1/auth/otp/verify")
+    .send({ phone, code })
+    .expect(200);
+  return {
+    accessToken: response.body.accessToken as string,
+    userId: response.body.user.id as string,
+    phone,
+  };
+}
+
+export async function createTestCategory(
+  prisma: PrismaService,
+  branchId: string,
+): Promise<MenuCategory> {
+  return prisma.menuCategory.create({
+    data: { branchId, nameEn: `Test Category ${uniqueSuffix()}` },
+  });
+}
+
+export async function createTestMenuItem(
+  prisma: PrismaService,
+  branchId: string,
+  categoryId: string,
+  overrides: Partial<{ nameEn: string; basePrice: number; isAvailable: boolean }> = {},
+): Promise<MenuItem> {
+  return prisma.menuItem.create({
+    data: {
+      branchId,
+      categoryId,
+      nameEn: overrides.nameEn ?? `Test Item ${uniqueSuffix()}`,
+      basePrice: overrides.basePrice ?? 10000,
+      isAvailable: overrides.isAvailable ?? true,
+    },
+  });
 }

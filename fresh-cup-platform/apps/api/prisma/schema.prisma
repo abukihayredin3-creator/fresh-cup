@@ -1,8 +1,10 @@
 // Fresh Cup — Prisma schema.
-// Phase 1 scope: identity/auth, RBAC, addresses, catalog (categories +
-// products + images), and inventory base models. Ordering, payments,
-// delivery, loyalty, and promotions are later phases — see
-// fresh-cup-platform/docs/DATABASE_SCHEMA.md and docs/ROADMAP.md.
+// Phase 1: identity/auth, RBAC, addresses, catalog (categories + products
+// + images), inventory base models.
+// Phase 2: modifiers, tables (QR dine-in), cart, orders + status workflow,
+// payments (Chapa/cash), coupons, loyalty accrual, notifications. Rider
+// delivery logistics, analytics, and loyalty redemption/rewards are later
+// phases — see fresh-cup-platform/docs/DATABASE_SCHEMA.md and docs/ROADMAP.md.
 //
 // IDs use Prisma's default (client-generated UUIDv4) rather than a
 // DB-generated UUIDv7: it needs no Postgres extension, works identically
@@ -47,7 +49,85 @@ enum InventoryTransactionReason {
   MANUAL_ADJUSTMENT
   RESTOCK
   WASTE
-  // ORDER_DEDUCTION is added when ordering (Phase 1.5/2) exists.
+  // Recipe-based ORDER_DEDUCTION lands in Phase 5 (Full inventory
+  // management) once menu items carry an ingredient mapping to deduct
+  // against — Phase 2 orders don't touch inventory.
+}
+
+enum OrderType {
+  DINE_IN
+  PICKUP
+  DELIVERY
+}
+
+/// pending_payment -> confirmed -> preparing -> ready -> {completed | out_for_delivery -> delivered -> completed}
+/// any non-terminal state -> cancelled. Enforced in OrdersService, not the DB.
+enum OrderStatus {
+  PENDING_PAYMENT
+  CONFIRMED
+  PREPARING
+  READY
+  OUT_FOR_DELIVERY
+  DELIVERED
+  COMPLETED
+  CANCELLED
+}
+
+enum ModifierSelectionType {
+  SINGLE
+  MULTIPLE
+}
+
+enum PaymentProvider {
+  CHAPA
+  CASH
+}
+
+enum PaymentMethod {
+  TELEBIRR
+  CBE_BIRR
+  HELLOCASH
+  AMOLE
+  CARD
+  CASH
+}
+
+enum PaymentStatus {
+  INITIATED
+  SUCCEEDED
+  FAILED
+  REFUNDED
+}
+
+enum DiscountType {
+  PERCENT
+  AMOUNT
+  FREE_DELIVERY
+}
+
+/// REDEEMED/rewards-catalog reasons land in Phase 4 (Loyalty & promotions)
+/// alongside the redemption flow itself — Phase 2 only accrues.
+enum LoyaltyReason {
+  ORDER_EARNED
+  MANUAL_ADJUSTMENT
+}
+
+enum PushPlatform {
+  IOS
+  ANDROID
+  WEB
+}
+
+enum NotificationChannel {
+  EMAIL
+  SMS
+  PUSH
+}
+
+enum NotificationStatus {
+  SENT
+  FAILED
+  SKIPPED
 }
 
 // ---------------------------------------------------------------------------
@@ -69,6 +149,10 @@ model Branch {
   menuCategories MenuCategory[]
   menuItems      MenuItem[]
   inventoryItems InventoryItem[]
+  tables         Table[]
+  modifierGroups ModifierGroup[]
+  carts          Cart[]
+  orders         Order[]
 
   @@map("branches")
 }
@@ -94,6 +178,13 @@ model User {
   addresses             Address[]
   refreshTokens         RefreshToken[]
   inventoryTransactions InventoryTransaction[]
+  carts                 Cart[]
+  orders                Order[]
+  orderStatusChanges    OrderStatusHistory[]
+  loyaltyEntries        LoyaltyLedger[]
+  pushTokens            PushToken[]
+  couponRedemptions     CouponRedemption[]
+  notificationLogs      NotificationLog[]
 
   @@index([branchId])
   @@map("users")
@@ -145,6 +236,8 @@ model Address {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
+  orders Order[]
+
   @@index([userId])
   @@map("addresses")
 }
@@ -188,7 +281,10 @@ model MenuItem {
   createdAt     DateTime     @default(now()) @map("created_at")
   updatedAt     DateTime     @updatedAt @map("updated_at")
 
-  images MenuItemImage[]
+  images             MenuItemImage[]
+  modifierGroupLinks MenuItemModifierGroup[]
+  cartItems          CartItem[]
+  orderItems         OrderItem[]
 
   @@index([branchId, categoryId])
   @@index([branchId, isAvailable])
@@ -247,4 +343,359 @@ model InventoryTransaction {
 
   @@index([inventoryItemId, createdAt])
   @@map("inventory_transactions")
+}
+
+// ---------------------------------------------------------------------------
+// Modifiers (Phase 2 — sizes, add-ons; "variants" are modeled as a SINGLE-
+// selection modifier group rather than a separate concept)
+// ---------------------------------------------------------------------------
+
+model ModifierGroup {
+  id            String                @id @default(uuid())
+  branchId      String                @map("branch_id")
+  branch        Branch                @relation(fields: [branchId], references: [id])
+  nameEn        String                @map("name_en")
+  nameAm        String?               @map("name_am")
+  selectionType ModifierSelectionType @map("selection_type")
+  minSelect     Int                   @default(0) @map("min_select")
+  maxSelect     Int?                  @map("max_select")
+  isActive      Boolean               @default(true) @map("is_active")
+  createdAt     DateTime              @default(now()) @map("created_at")
+  updatedAt     DateTime              @updatedAt @map("updated_at")
+
+  options       ModifierOption[]
+  menuItemLinks MenuItemModifierGroup[]
+
+  @@index([branchId])
+  @@map("modifier_groups")
+}
+
+model ModifierOption {
+  id              String        @id @default(uuid())
+  modifierGroupId String        @map("modifier_group_id")
+  modifierGroup   ModifierGroup @relation(fields: [modifierGroupId], references: [id], onDelete: Cascade)
+  nameEn          String        @map("name_en")
+  nameAm          String?       @map("name_am")
+  priceDelta      Int           @default(0) @map("price_delta")
+  isActive        Boolean       @default(true) @map("is_active")
+  sortOrder       Int           @default(0) @map("sort_order")
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+
+  cartItemModifiers  CartItemModifier[]
+  orderItemModifiers OrderItemModifier[]
+
+  @@index([modifierGroupId])
+  @@map("modifier_options")
+}
+
+/// Join table: which modifier groups apply to which menu item, with
+/// per-item overrides (e.g. "Size" is required on drinks but wouldn't be
+/// on a pastry that also offers it).
+model MenuItemModifierGroup {
+  id              String        @id @default(uuid())
+  menuItemId      String        @map("menu_item_id")
+  menuItem        MenuItem      @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  modifierGroupId String        @map("modifier_group_id")
+  modifierGroup   ModifierGroup @relation(fields: [modifierGroupId], references: [id], onDelete: Cascade)
+  isRequired      Boolean       @default(false) @map("is_required")
+  sortOrder       Int           @default(0) @map("sort_order")
+  createdAt       DateTime      @default(now()) @map("created_at")
+
+  @@unique([menuItemId, modifierGroupId])
+  @@index([modifierGroupId])
+  @@map("menu_item_modifier_groups")
+}
+
+// ---------------------------------------------------------------------------
+// Tables (QR dine-in)
+// ---------------------------------------------------------------------------
+
+model Table {
+  id        String   @id @default(uuid())
+  branchId  String   @map("branch_id")
+  branch    Branch   @relation(fields: [branchId], references: [id])
+  label     String
+  qrToken   String   @unique @map("qr_token")
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  orders Order[]
+
+  @@index([branchId])
+  @@map("tables")
+}
+
+// ---------------------------------------------------------------------------
+// Cart — server-persisted so it survives across devices/sessions. One cart
+// per (user, branch); checkout consumes and clears it rather than tracking
+// a cart lifecycle status.
+// ---------------------------------------------------------------------------
+
+model Cart {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  branchId  String   @map("branch_id")
+  branch    Branch   @relation(fields: [branchId], references: [id])
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  items CartItem[]
+
+  @@unique([userId, branchId])
+  @@map("carts")
+}
+
+model CartItem {
+  id         String   @id @default(uuid())
+  cartId     String   @map("cart_id")
+  cart       Cart     @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  menuItemId String   @map("menu_item_id")
+  menuItem   MenuItem @relation(fields: [menuItemId], references: [id])
+  quantity   Int      @default(1)
+  notes      String?
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  modifiers CartItemModifier[]
+
+  @@index([cartId])
+  @@map("cart_items")
+}
+
+model CartItemModifier {
+  id               String         @id @default(uuid())
+  cartItemId       String         @map("cart_item_id")
+  cartItem         CartItem       @relation(fields: [cartItemId], references: [id], onDelete: Cascade)
+  modifierOptionId String         @map("modifier_option_id")
+  modifierOption   ModifierOption @relation(fields: [modifierOptionId], references: [id], onDelete: Cascade)
+  createdAt        DateTime       @default(now()) @map("created_at")
+
+  @@unique([cartItemId, modifierOptionId])
+  @@map("cart_item_modifiers")
+}
+
+// ---------------------------------------------------------------------------
+// Orders — immutable once placed; line items and modifiers snapshot
+// name/price so later catalog edits never change a historical order.
+// ---------------------------------------------------------------------------
+
+model Order {
+  id        String    @id @default(uuid())
+  branchId  String    @map("branch_id")
+  branch    Branch    @relation(fields: [branchId], references: [id])
+  userId    String    @map("user_id")
+  user      User      @relation(fields: [userId], references: [id])
+  orderType OrderType @map("order_type")
+
+  tableId String? @map("table_id")
+  table   Table?  @relation(fields: [tableId], references: [id])
+
+  addressId           String?  @map("address_id")
+  address             Address? @relation(fields: [addressId], references: [id], onDelete: SetNull)
+  deliveryAddressText String?  @map("delivery_address_text")
+  deliveryLat         Decimal? @map("delivery_lat") @db.Decimal(9, 6)
+  deliveryLng         Decimal? @map("delivery_lng") @db.Decimal(9, 6)
+
+  status OrderStatus @default(PENDING_PAYMENT)
+
+  subtotal      Int
+  discountTotal Int    @default(0) @map("discount_total")
+  deliveryFee   Int    @default(0) @map("delivery_fee")
+  taxTotal      Int    @default(0) @map("tax_total")
+  total         Int
+  currency      String @default("ETB")
+
+  couponId String? @map("coupon_id")
+  coupon   Coupon? @relation(fields: [couponId], references: [id])
+
+  idempotencyKey String  @unique @map("idempotency_key")
+  notes          String?
+
+  placedAt    DateTime  @default(now()) @map("placed_at")
+  confirmedAt DateTime? @map("confirmed_at")
+  readyAt     DateTime? @map("ready_at")
+  deliveredAt DateTime? @map("delivered_at")
+  cancelledAt DateTime? @map("cancelled_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  items            OrderItem[]
+  statusHistory    OrderStatusHistory[]
+  payments         Payment[]
+  couponRedemption CouponRedemption?
+  loyaltyEntries   LoyaltyLedger[]
+
+  @@index([branchId, status, createdAt])
+  @@index([userId, createdAt])
+  @@map("orders")
+}
+
+model OrderItem {
+  id           String   @id @default(uuid())
+  orderId      String   @map("order_id")
+  order        Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  menuItemId   String   @map("menu_item_id")
+  menuItem     MenuItem @relation(fields: [menuItemId], references: [id])
+  nameSnapshot String   @map("name_snapshot")
+  unitPrice    Int      @map("unit_price")
+  quantity     Int
+  lineTotal    Int      @map("line_total")
+  notes        String?
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  modifiers OrderItemModifier[]
+
+  @@index([orderId])
+  @@map("order_items")
+}
+
+model OrderItemModifier {
+  id                 String          @id @default(uuid())
+  orderItemId        String          @map("order_item_id")
+  orderItem          OrderItem       @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  modifierOptionId   String?         @map("modifier_option_id")
+  modifierOption     ModifierOption? @relation(fields: [modifierOptionId], references: [id], onDelete: SetNull)
+  nameSnapshot       String          @map("name_snapshot")
+  priceDeltaSnapshot Int             @map("price_delta_snapshot")
+  createdAt          DateTime        @default(now()) @map("created_at")
+
+  @@index([orderItemId])
+  @@map("order_item_modifiers")
+}
+
+/// Append-only audit trail powering "Order Timeline" — one row per status
+/// transition, independent of the timestamp columns cached on `Order`.
+model OrderStatusHistory {
+  id              String       @id @default(uuid())
+  orderId         String       @map("order_id")
+  order           Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  fromStatus      OrderStatus? @map("from_status")
+  toStatus        OrderStatus  @map("to_status")
+  changedByUserId String?      @map("changed_by_user_id")
+  changedByUser   User?        @relation(fields: [changedByUserId], references: [id])
+  note            String?
+  createdAt       DateTime     @default(now()) @map("created_at")
+
+  @@index([orderId, createdAt])
+  @@map("order_status_history")
+}
+
+// ---------------------------------------------------------------------------
+// Payments
+// ---------------------------------------------------------------------------
+
+model Payment {
+  id                String          @id @default(uuid())
+  orderId           String          @map("order_id")
+  order             Order           @relation(fields: [orderId], references: [id])
+  provider          PaymentProvider
+  method            PaymentMethod
+  providerReference String?         @unique @map("provider_reference")
+  amount            Int
+  currency          String          @default("ETB")
+  status            PaymentStatus   @default(INITIATED)
+  rawWebhookPayload Json?           @map("raw_webhook_payload")
+  initiatedAt       DateTime        @default(now()) @map("initiated_at")
+  completedAt       DateTime?       @map("completed_at")
+  createdAt         DateTime        @default(now()) @map("created_at")
+  updatedAt         DateTime        @updatedAt @map("updated_at")
+
+  @@index([orderId])
+  @@map("payments")
+}
+
+// ---------------------------------------------------------------------------
+// Promotions
+// ---------------------------------------------------------------------------
+
+model Coupon {
+  id                    String       @id @default(uuid())
+  code                  String       @unique
+  discountType          DiscountType @map("discount_type")
+  value                 Int          @default(0)
+  minOrderTotal         Int?         @map("min_order_total")
+  startsAt              DateTime?    @map("starts_at")
+  expiresAt             DateTime?    @map("expires_at")
+  maxRedemptions        Int?         @map("max_redemptions")
+  maxRedemptionsPerUser Int?         @map("max_redemptions_per_user")
+  isActive              Boolean      @default(true) @map("is_active")
+  createdAt             DateTime     @default(now()) @map("created_at")
+  updatedAt             DateTime     @updatedAt @map("updated_at")
+
+  redemptions CouponRedemption[]
+  orders      Order[]
+
+  @@map("coupons")
+}
+
+model CouponRedemption {
+  id         String   @id @default(uuid())
+  couponId   String   @map("coupon_id")
+  coupon     Coupon   @relation(fields: [couponId], references: [id])
+  userId     String   @map("user_id")
+  user       User     @relation(fields: [userId], references: [id])
+  orderId    String   @unique @map("order_id")
+  order      Order    @relation(fields: [orderId], references: [id])
+  redeemedAt DateTime @default(now()) @map("redeemed_at")
+
+  @@index([couponId, userId])
+  @@map("coupon_redemptions")
+}
+
+// ---------------------------------------------------------------------------
+// Loyalty (accrual only — redemption/rewards catalog is Phase 4)
+// ---------------------------------------------------------------------------
+
+/// Append-only ledger; a user's balance is the sum of their entries,
+/// cached on each row as `balanceAfter` so history never needs recompute.
+model LoyaltyLedger {
+  id           String        @id @default(uuid())
+  userId       String        @map("user_id")
+  user         User          @relation(fields: [userId], references: [id])
+  orderId      String?       @map("order_id")
+  order        Order?        @relation(fields: [orderId], references: [id])
+  pointsDelta  Int           @map("points_delta")
+  reason       LoyaltyReason
+  balanceAfter Int           @map("balance_after")
+  createdAt    DateTime      @default(now()) @map("created_at")
+
+  @@index([userId, createdAt])
+  @@map("loyalty_ledger")
+}
+
+// ---------------------------------------------------------------------------
+// Notifications
+// ---------------------------------------------------------------------------
+
+model PushToken {
+  id        String       @id @default(uuid())
+  userId    String       @map("user_id")
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String       @unique
+  platform  PushPlatform
+  createdAt DateTime     @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@map("push_tokens")
+}
+
+/// Audit trail of dispatched notifications — every send attempt (any
+/// channel) is a row, regardless of outcome.
+model NotificationLog {
+  id        String              @id @default(uuid())
+  userId    String?             @map("user_id")
+  user      User?               @relation(fields: [userId], references: [id])
+  channel   NotificationChannel
+  type      String
+  payload   Json
+  status    NotificationStatus
+  error     String?
+  createdAt DateTime            @default(now()) @map("created_at")
+
+  @@index([userId, createdAt])
+  @@map("notification_logs")
 }

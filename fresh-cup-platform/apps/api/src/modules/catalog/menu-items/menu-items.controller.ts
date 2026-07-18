@@ -17,6 +17,9 @@ import { CurrentUser } from "../../../common/decorators/current-user.decorator";
 import { Public } from "../../../common/decorators/public.decorator";
 import { Roles } from "../../../common/decorators/roles.decorator";
 import type { RequestUser } from "../../../common/types/request-user.interface";
+import { AttachModifierGroupDto } from "../modifiers/dto/attach-modifier-group.dto";
+import { UpdateMenuItemModifierGroupDto } from "../modifiers/dto/update-menu-item-modifier-group.dto";
+import { MenuItemModifierGroupsService } from "../modifiers/menu-item-modifier-groups.service";
 import { AdminListMenuItemsQueryDto } from "./dto/admin-list-menu-items-query.dto";
 import { CreateMenuItemImageDto } from "./dto/create-menu-item-image.dto";
 import { CreateMenuItemDto } from "./dto/create-menu-item.dto";
@@ -35,6 +38,7 @@ export class MenuItemsController {
   constructor(
     private readonly menuItemsService: MenuItemsService,
     private readonly imagesService: MenuItemImagesService,
+    private readonly modifierGroupsService: MenuItemModifierGroupsService,
   ) {}
 
   @Public()
@@ -166,5 +170,45 @@ export class MenuItemsController {
     @Param("imageId") imageId: string,
   ): Promise<void> {
     await this.imagesService.remove(actor, id, imageId);
+  }
+
+  @Post("admin/menu-items/:id/modifier-groups")
+  @Roles(UserRole.MANAGER, UserRole.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "Attach a modifier group to a menu item (manager/admin)" })
+  async attachModifierGroup(
+    @CurrentUser() actor: RequestUser,
+    @Param("id") id: string,
+    @Body() dto: AttachModifierGroupDto,
+  ) {
+    return this.modifierGroupsService.attach(actor, id, dto);
+  }
+
+  @Patch("admin/menu-items/:id/modifier-groups/:linkId")
+  @Roles(UserRole.MANAGER, UserRole.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: "Update an attached modifier group's isRequired/sortOrder (manager/admin)",
+  })
+  async updateModifierGroupLink(
+    @CurrentUser() actor: RequestUser,
+    @Param("id") id: string,
+    @Param("linkId") linkId: string,
+    @Body() dto: UpdateMenuItemModifierGroupDto,
+  ) {
+    return this.modifierGroupsService.update(actor, id, linkId, dto);
+  }
+
+  @Delete("admin/menu-items/:id/modifier-groups/:linkId")
+  @Roles(UserRole.MANAGER, UserRole.ADMIN)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: "Detach a modifier group from a menu item (manager/admin)" })
+  async detachModifierGroup(
+    @CurrentUser() actor: RequestUser,
+    @Param("id") id: string,
+    @Param("linkId") linkId: string,
+  ): Promise<void> {
+    await this.modifierGroupsService.detach(actor, id, linkId);
   }
 }

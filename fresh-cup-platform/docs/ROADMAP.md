@@ -33,36 +33,72 @@ breaking migration once real orders/customers exist.
   through documented, tested, RBAC-protected APIs — with no cart, order, or
   payment logic yet
 
-## Phase 2 — Online ordering
+## Phase 2 — Ordering engine ✅
 
-- `apps/web`: public menu browse, cart, checkout
-- QR dine-in flow: scan → resolve table → order-ahead
-- Chapa payment integration (initiate + webhook)
-- `apps/admin`: live order list (polling first, WebSocket next), basic kitchen view
-- Customer order-status page (WebSocket)
-- Menu item variants and modifier groups (deferred from Phase 1 — these are
-  ordering-flow concerns: variant/modifier selection only matters once a
-  cart exists to select them into)
-- **Exit criteria:** a real customer can scan a QR code or visit the site, order, pay via Chapa, and staff can see and fulfill the order
+- Product modifiers: reusable groups (SINGLE/MULTIPLE-select) with per-item
+  required/sort overrides, priced options, embedded in the public menu-item
+  response as the cart/checkout customization contract
+- QR dine-in tables: admin CRUD + QR-token generation/regeneration, public
+  resolve-by-token endpoint
+- Server-persisted cart (one per user+branch), quantity management, live
+  modifier validation and pricing against the current catalog
+- Checkout: idempotency-key-deduped order creation from the cart, order
+  types (dine-in/pickup/delivery) with type-specific validation, flat-rate
+  MVP delivery fee (zone/distance-based quoting is Phase 3)
+- Order status workflow (`pending_payment → confirmed → preparing → ready →
+{completed | out_for_delivery → delivered → completed}`, any non-terminal
+  → `cancelled`) enforced server-side, with an append-only timeline and a
+  branch-scoped kitchen queue
+- Coupon engine: percent/amount/free-delivery discounts, redemption limits
+  (global + per-user), applied atomically at checkout
+- Loyalty points: accrual ledger tied to a _settled_ payment (not just order
+  placement), `GET /loyalty/me` for balance + history — tiers and a
+  redemption/rewards-catalog flow are Phase 4
+- Payments: dependency-inverted provider interface, Chapa (TeleBirr/CBE
+  Birr/HelloCash/Amole/cards, sandbox fallback with no API key configured)
+  - cash (pay-at-counter/on-delivery, staff-confirmed settlement), signed
+    webhook handling, admin refunds
+- Real-time: Socket.IO `/ws/orders` gateway — JWT-authenticated on connect,
+  customer order-room + staff branch-room broadcasts on every status change
+- Notifications: SMS/email/push provider abstraction (console
+  implementations pending real gateways), dispatched on order lifecycle
+  events, every attempt logged to `notification_logs`
+- In-process domain events (`order.created`/`order.status_changed`/
+  `order.paid`, awaited via `emitAsync`) decouple ordering from
+  loyalty/notifications — see `common/events/order-events.ts`
+- 176 automated tests (unit + e2e against real Postgres/Redis, including a
+  live Socket.IO client) covering checkout, the full status graph, RBAC,
+  payments, coupon redemption limits, and loyalty accrual
+- **Exit criteria:** a customer can build a cart, check out via dine-in/
+  pickup/delivery, pay by Chapa or cash, and see live order-status updates;
+  staff can run the kitchen queue end-to-end — all without touching
+  rider logistics or analytics
 
 ## Phase 3 — Delivery & real-time
 
-- Delivery module: zones, fee quoting, rider assignment
+- Delivery module: zones, distance/zone-based fee quoting (replacing the
+  Phase 2 flat rate), rider assignment
 - `apps/delivery`: PWA for riders — assignments, status updates, live location ping
-- WebSocket rider-tracking surfaced to the customer's order-status page
-- SMS notifications (AfroMessage): order confirmed, out for delivery, delivered
+- Rider-tracking extends the existing `/ws/orders` gateway (or a sibling
+  `/ws/delivery` namespace) built in Phase 2 — the socket auth/room pattern
+  doesn't change, only who joins which room
+- SMS notifications (AfroMessage): swaps in for the Phase 2 console SMS
+  provider behind the same `SmsProvider` interface — no call-site changes
 - **Exit criteria:** delivery orders can be assigned to a rider and tracked live end-to-end
 
-## Phase 4 — Loyalty & promotions
+## Phase 4 — Loyalty rewards & promotions campaigns
 
-- Points ledger, tier calculation, rewards catalog, redemption flow
-- Coupons/promo codes, checkout-time validation
-- Customer portal: loyalty balance/history surfaced alongside the addresses built in Phase 1
-- **Exit criteria:** repeat customers earn and redeem points; marketing can run a coupon campaign without engineering involvement
+- Loyalty tiers (calculated from the Phase 2 accrual ledger), rewards
+  catalog, redemption flow (spend points for a discount/free item)
+- Coupon campaigns: scheduled/targeted promotions on top of the Phase 2
+  coupon engine (which already handles validation, limits, and redemption)
+- Customer portal: loyalty balance/history (already served by the Phase 2
+  API) surfaced in the UI alongside rewards redemption
+- **Exit criteria:** repeat customers can redeem points for a reward; marketing can run a scheduled coupon campaign without engineering involvement
 
 ## Phase 5 — Full inventory management
 
-- Recipes (menu item → ingredient mapping) on top of the Phase 1 ledger, auto-deduction on paid orders
+- Recipes (menu item → ingredient mapping) on top of the Phase 1 ledger, auto-deduction hooked off the Phase 2 `order.paid` event
 - Low-stock alerts, supplier + purchase-order workflow
 - `apps/admin`: inventory dashboard (stock levels, low-stock flags already served by the Phase 1 API)
 - **Exit criteria:** stock levels stay accurate without manual recounts, and low-stock alerts fire before a menu item has to be pulled mid-service

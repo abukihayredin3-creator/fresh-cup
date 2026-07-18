@@ -1,14 +1,23 @@
 /**
- * Seeds one branch, a starter menu (categories + products + images), and a
- * handful of inventory items so the catalog/inventory endpoints have real
- * data to browse in development. Idempotent — safe to re-run.
+ * Seeds one branch, a starter menu (categories + products + images), a
+ * handful of inventory items, Phase 2 ordering fixtures (modifiers, a
+ * dine-in table, a coupon) so every endpoint has real data to browse in
+ * development. Idempotent — safe to re-run. Cart/order/payment rows are
+ * deliberately not seeded — they're transactional data, not fixtures.
  *
  * Admin/manager/staff dev accounts are only created when NODE_ENV is not
  * "production" AND the corresponding *_SEED_EMAIL/_SEED_PASSWORD env vars
  * are set — never accidentally in a real environment.
  */
-import { PrismaClient, InventoryUnit, UserRole } from "@prisma/client";
+import {
+  PrismaClient,
+  InventoryUnit,
+  UserRole,
+  ModifierSelectionType,
+  DiscountType,
+} from "@prisma/client";
 import { hashPassword } from "../src/common/crypto/password.util";
+import { generateOpaqueToken } from "../src/common/crypto/token.util";
 
 const prisma = new PrismaClient();
 
@@ -240,11 +249,115 @@ async function seedInventory(branchId: string) {
   }
 }
 
+async function attachModifierGroupIfMissing(
+  menuItemId: string,
+  modifierGroupId: string,
+  isRequired: boolean,
+  sortOrder: number,
+) {
+  const existing = await prisma.menuItemModifierGroup.findUnique({
+    where: { menuItemId_modifierGroupId: { menuItemId, modifierGroupId } },
+  });
+  if (existing) return;
+
+  await prisma.menuItemModifierGroup.create({
+    data: { menuItemId, modifierGroupId, isRequired, sortOrder },
+  });
+}
+
+/** "Size" (required, single-select) on drinks; "Add-ons" (optional, multi-select) on smoothies/bowls. */
+async function seedModifiers(branchId: string) {
+  let sizeGroup = await prisma.modifierGroup.findFirst({ where: { branchId, nameEn: "Size" } });
+  sizeGroup ??= await prisma.modifierGroup.create({
+    data: {
+      branchId,
+      nameEn: "Size",
+      nameAm: "መጠን",
+      selectionType: ModifierSelectionType.SINGLE,
+      minSelect: 1,
+      maxSelect: 1,
+      options: {
+        create: [
+          { nameEn: "Small", nameAm: "ትንሽ", priceDelta: 0, sortOrder: 0 },
+          { nameEn: "Medium", nameAm: "መካከለኛ", priceDelta: 1000, sortOrder: 1 },
+          { nameEn: "Large", nameAm: "ትልቅ", priceDelta: 2000, sortOrder: 2 },
+        ],
+      },
+    },
+  });
+
+  let addOnsGroup = await prisma.modifierGroup.findFirst({
+    where: { branchId, nameEn: "Add-ons" },
+  });
+  addOnsGroup ??= await prisma.modifierGroup.create({
+    data: {
+      branchId,
+      nameEn: "Add-ons",
+      nameAm: "ተጨማሪዎች",
+      selectionType: ModifierSelectionType.MULTIPLE,
+      minSelect: 0,
+      maxSelect: 3,
+      options: {
+        create: [
+          { nameEn: "Extra Protein Shot", nameAm: "ተጨማሪ ፕሮቲን", priceDelta: 800, sortOrder: 0 },
+          { nameEn: "Chia Seeds", nameAm: "ቺያ ዘር", priceDelta: 500, sortOrder: 1 },
+          { nameEn: "Extra Honey", nameAm: "ተጨማሪ ማር", priceDelta: 300, sortOrder: 2 },
+        ],
+      },
+    },
+  });
+
+  const sizeCategories = ["Fresh Juices", "Smoothies"];
+  const addOnCategories = ["Smoothies", "Healthy Bowls"];
+
+  for (const categoryName of new Set([...sizeCategories, ...addOnCategories])) {
+    const category = await prisma.menuCategory.findFirst({
+      where: { branchId, nameEn: categoryName },
+    });
+    if (!category) continue;
+
+    const items = await prisma.menuItem.findMany({ where: { branchId, categoryId: category.id } });
+    for (const item of items) {
+      if (sizeCategories.includes(categoryName)) {
+        await attachModifierGroupIfMissing(item.id, sizeGroup.id, true, 0);
+      }
+      if (addOnCategories.includes(categoryName)) {
+        await attachModifierGroupIfMissing(item.id, addOnsGroup.id, false, 1);
+      }
+    }
+  }
+}
+
+async function seedTable(branchId: string) {
+  const existing = await prisma.table.findFirst({ where: { branchId, label: "T-1" } });
+  if (existing) return;
+
+  await prisma.table.create({ data: { branchId, label: "T-1", qrToken: generateOpaqueToken() } });
+}
+
+async function seedCoupon() {
+  const existing = await prisma.coupon.findUnique({ where: { code: "WELCOME10" } });
+  if (existing) return;
+
+  await prisma.coupon.create({
+    data: {
+      code: "WELCOME10",
+      discountType: DiscountType.PERCENT,
+      value: 10,
+      minOrderTotal: 5000,
+      maxRedemptionsPerUser: 1,
+    },
+  });
+}
+
 async function main() {
   const branch = await seedBranch();
 
   await seedCatalog(branch.id);
   await seedInventory(branch.id);
+  await seedModifiers(branch.id);
+  await seedTable(branch.id);
+  await seedCoupon();
 
   await seedDevUser({
     emailEnv: "ADMIN_SEED_EMAIL",

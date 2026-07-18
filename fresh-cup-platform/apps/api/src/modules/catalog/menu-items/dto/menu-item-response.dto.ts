@@ -1,4 +1,5 @@
 import { ApiProperty } from "@nestjs/swagger";
+import { MenuItemModifierGroupResponseDto } from "../../modifiers/dto/menu-item-modifier-group-response.dto";
 import { MenuItemImageResponseDto } from "./menu-item-image-response.dto";
 
 export class MenuItemResponseDto {
@@ -40,4 +41,7 @@ export class MenuItemResponseDto {
 
   @ApiProperty({ type: [MenuItemImageResponseDto] })
   images!: MenuItemImageResponseDto[];
+
+  @ApiProperty({ type: [MenuItemModifierGroupResponseDto] })
+  modifierGroups!: MenuItemModifierGroupResponseDto[];
 }

@@ -32,6 +32,6 @@ import { TokenService } from "./token.service";
     JwtStrategy,
     { provide: SMS_PROVIDER, useClass: ConsoleSmsProvider },
   ],
-  exports: [TokenService],
+  exports: [TokenService, SMS_PROVIDER],
 })
 export class AuthModule {}

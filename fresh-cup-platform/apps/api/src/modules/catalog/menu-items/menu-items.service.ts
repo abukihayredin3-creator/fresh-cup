@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
-import { Prisma, type MenuItem, type MenuItemImage } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { assertBranchAccess } from "../../../common/access/branch-access.util";
 import { paginate } from "../../../common/pagination/paginate";
 import type { RequestUser } from "../../../common/types/request-user.interface";
@@ -10,21 +10,37 @@ import type { ListMenuItemsQueryDto } from "./dto/list-menu-items-query.dto";
 import type { MenuItemResponseDto } from "./dto/menu-item-response.dto";
 import type { UpdateMenuItemDto } from "./dto/update-menu-item.dto";
 
-type MenuItemWithImages = MenuItem & { images: MenuItemImage[] };
+const WITH_RELATIONS = {
+  images: { orderBy: { sortOrder: Prisma.SortOrder.asc } },
+  // Only currently-orderable groups/options — this DTO doubles as the
+  // cart/checkout customization contract, not an admin management view
+  // (that's /admin/modifier-groups).
+  modifierGroupLinks: {
+    where: { modifierGroup: { isActive: true } },
+    orderBy: { sortOrder: Prisma.SortOrder.asc },
+    include: {
+      modifierGroup: {
+        include: {
+          options: { where: { isActive: true }, orderBy: { sortOrder: Prisma.SortOrder.asc } },
+        },
+      },
+    },
+  },
+} as const;
 
-const WITH_IMAGES = { images: { orderBy: { sortOrder: Prisma.SortOrder.asc } } } as const;
+export type MenuItemDetail = Prisma.MenuItemGetPayload<{ include: typeof WITH_RELATIONS }>;
 
 @Injectable()
 export class MenuItemsService {
   constructor(private readonly prisma: PrismaService) {}
 
   listAvailableForBranch(branchId: string, query: ListMenuItemsQueryDto) {
-    return paginate<MenuItemWithImages>(
+    return paginate<MenuItemDetail>(
       (page) =>
         this.prisma.menuItem.findMany({
           where: { branchId, isAvailable: true, categoryId: query.categoryId },
           orderBy: { sortOrder: "asc" },
-          include: WITH_IMAGES,
+          include: WITH_RELATIONS,
           ...page,
         }),
       { cursor: query.cursor, limit: query.limit },
@@ -32,7 +48,7 @@ export class MenuItemsService {
   }
 
   list(query: AdminListMenuItemsQueryDto) {
-    return paginate<MenuItemWithImages>(
+    return paginate<MenuItemDetail>(
       (page) =>
         this.prisma.menuItem.findMany({
           where: {
@@ -41,47 +57,43 @@ export class MenuItemsService {
             isAvailable: query.isAvailable,
           },
           orderBy: { sortOrder: "asc" },
-          include: WITH_IMAGES,
+          include: WITH_RELATIONS,
           ...page,
         }),
       { cursor: query.cursor, limit: query.limit },
     );
   }
 
-  async findByIdOrThrow(id: string): Promise<MenuItemWithImages> {
-    const item = await this.prisma.menuItem.findUnique({ where: { id }, include: WITH_IMAGES });
+  async findByIdOrThrow(id: string): Promise<MenuItemDetail> {
+    const item = await this.prisma.menuItem.findUnique({ where: { id }, include: WITH_RELATIONS });
     if (!item) {
       throw new NotFoundException("Menu item not found");
     }
     return item;
   }
 
-  create(actor: RequestUser, dto: CreateMenuItemDto): Promise<MenuItemWithImages> {
+  create(actor: RequestUser, dto: CreateMenuItemDto): Promise<MenuItemDetail> {
     assertBranchAccess(actor, dto.branchId);
-    return this.prisma.menuItem.create({ data: dto, include: WITH_IMAGES });
+    return this.prisma.menuItem.create({ data: dto, include: WITH_RELATIONS });
   }
 
-  async update(
-    actor: RequestUser,
-    id: string,
-    dto: UpdateMenuItemDto,
-  ): Promise<MenuItemWithImages> {
+  async update(actor: RequestUser, id: string, dto: UpdateMenuItemDto): Promise<MenuItemDetail> {
     const item = await this.findByIdOrThrow(id);
     assertBranchAccess(actor, item.branchId);
-    return this.prisma.menuItem.update({ where: { id }, data: dto, include: WITH_IMAGES });
+    return this.prisma.menuItem.update({ where: { id }, data: dto, include: WITH_RELATIONS });
   }
 
   async setAvailability(
     actor: RequestUser,
     id: string,
     isAvailable: boolean,
-  ): Promise<MenuItemWithImages> {
+  ): Promise<MenuItemDetail> {
     const item = await this.findByIdOrThrow(id);
     assertBranchAccess(actor, item.branchId);
     return this.prisma.menuItem.update({
       where: { id },
       data: { isAvailable },
-      include: WITH_IMAGES,
+      include: WITH_RELATIONS,
     });
   }
 
@@ -92,7 +104,7 @@ export class MenuItemsService {
     await this.prisma.menuItem.update({ where: { id }, data: { isAvailable: false } });
   }
 
-  toResponse(item: MenuItemWithImages): MenuItemResponseDto {
+  toResponse(item: MenuItemDetail): MenuItemResponseDto {
     return {
       id: item.id,
       branchId: item.branchId,
@@ -112,6 +124,25 @@ export class MenuItemsService {
         altText: image.altText,
         isPrimary: image.isPrimary,
         sortOrder: image.sortOrder,
+      })),
+      modifierGroups: item.modifierGroupLinks.map((link) => ({
+        id: link.id,
+        modifierGroupId: link.modifierGroupId,
+        nameEn: link.modifierGroup.nameEn,
+        nameAm: link.modifierGroup.nameAm,
+        selectionType: link.modifierGroup.selectionType,
+        minSelect: link.modifierGroup.minSelect,
+        maxSelect: link.modifierGroup.maxSelect,
+        isRequired: link.isRequired,
+        sortOrder: link.sortOrder,
+        options: link.modifierGroup.options.map((option) => ({
+          id: option.id,
+          nameEn: option.nameEn,
+          nameAm: option.nameAm,
+          priceDelta: option.priceDelta,
+          isActive: option.isActive,
+          sortOrder: option.sortOrder,
+        })),
       })),
     };
   }

@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { APP_FILTER, APP_GUARD } from "@nestjs/core";
+import { EventEmitterModule } from "@nestjs/event-emitter";
 import { ThrottlerModule } from "@nestjs/throttler";
 import { validateEnv } from "./common/config/env.validation";
 import { HttpExceptionFilter } from "./common/filters/http-exception.filter";
@@ -14,8 +15,14 @@ import { BranchesModule } from "./modules/branches/branches.module";
 import { CatalogModule } from "./modules/catalog/catalog.module";
 import { HealthModule } from "./modules/health/health.module";
 import { InventoryModule } from "./modules/inventory/inventory.module";
+import { LoyaltyModule } from "./modules/loyalty/loyalty.module";
+import { NotificationsModule } from "./modules/notifications/notifications.module";
+import { OrderingModule } from "./modules/ordering/ordering.module";
+import { PaymentsModule } from "./modules/payments/payments.module";
+import { PromotionsModule } from "./modules/promotions/promotions.module";
 import { UsersModule } from "./modules/users/users.module";
 import { RedisModule } from "./redis/redis.module";
+import { WebsocketsModule } from "./websockets/websockets.module";
 
 @Module({
   imports: [
@@ -24,6 +31,9 @@ import { RedisModule } from "./redis/redis.module";
       validate: validateEnv,
       envFilePath: [".env.local", ".env"],
     }),
+    // Cross-cutting domain events (order.paid -> loyalty accrual/notifications,
+    // etc.) — see common/events/order-events.ts for the full contract.
+    EventEmitterModule.forRoot(),
     ThrottlerModule.forRoot([{ name: "default", ttl: 60_000, limit: 60 }]),
     PrismaModule,
     RedisModule,
@@ -34,6 +44,12 @@ import { RedisModule } from "./redis/redis.module";
     BranchesModule,
     CatalogModule,
     InventoryModule,
+    OrderingModule,
+    PromotionsModule,
+    LoyaltyModule,
+    PaymentsModule,
+    NotificationsModule,
+    WebsocketsModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: AppThrottlerGuard },

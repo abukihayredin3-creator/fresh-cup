@@ -7,7 +7,7 @@ import { configureApp } from "./bootstrap";
 import type { EnvironmentVariables } from "./common/config/env.validation";
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, { rawBody: true });
   configureApp(app);
 
   const config = app.get(ConfigService<EnvironmentVariables, true>);
