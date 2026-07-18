@@ -33,6 +33,7 @@
 
 //--- Inputs: everything configurable, nothing hardcoded.
 input string InpBridgeUrl             = "http://127.0.0.1:8000"; // Bridge base URL
+input string InpApiKey                = "";                      // X-API-Key header (must match security.api_key in bridge_config.yaml; leave blank if unset there)
 input int    InpHttpTimeoutMs         = 5000;                    // WebRequest timeout (ms)
 input int    InpDecisionIntervalSec   = 60;                      // Seconds between AI decision requests (OnTimer cadence)
 input int    InpBarCount              = 100;                     // OHLC bars to send per /predict request
@@ -162,7 +163,7 @@ void RequestDecisionIfDue()
 
    EaLogRequest(request_id, _Symbol, payload);
 
-   HttpResult result = HttpPost(InpBridgeUrl + "/predict", payload, InpHttpTimeoutMs);
+   HttpResult result = HttpPost(InpBridgeUrl + "/predict", payload, InpHttpTimeoutMs, InpApiKey);
    if(!result.success)
      {
       EaLogError("RequestDecisionIfDue", result.error);
@@ -474,7 +475,7 @@ void ReportTradeClose(const ulong deal_ticket)
 
    EaLogTradeResult(trade_id, outcome, total_pnl);
 
-   HttpResult result = HttpPost(InpBridgeUrl + "/trade_result", payload, InpHttpTimeoutMs);
+   HttpResult result = HttpPost(InpBridgeUrl + "/trade_result", payload, InpHttpTimeoutMs, InpApiKey);
    if(!result.success)
       EaLogError("ReportTradeClose", result.error);
 

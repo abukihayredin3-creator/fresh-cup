@@ -23,8 +23,10 @@ struct HttpResult
 
 //--- POST a JSON body, return the parsed HTTP result. success=true only
 //    for 2xx responses; the body is still returned on non-2xx so the
-//    caller can log it, just success=false.
-HttpResult HttpPost(const string url, const string json_body, const int timeout_ms)
+//    caller can log it, just success=false. ``api_key`` is optional —
+//    pass "" (the default) when the bridge has no security.api_key
+//    configured; a non-empty value is sent as an X-API-Key header.
+HttpResult HttpPost(const string url, const string json_body, const int timeout_ms, const string api_key = "")
   {
    HttpResult result;
    result.success     = false;
@@ -42,6 +44,8 @@ HttpResult HttpPost(const string url, const string json_body, const int timeout_
    uchar  response_data[];
    string response_headers;
    string request_headers = "Content-Type: application/json\r\n";
+   if(api_key != "")
+      request_headers += "X-API-Key: " + api_key + "\r\n";
 
    ResetLastError();
    int status = WebRequest("POST", url, request_headers, timeout_ms, request_data, response_data, response_headers);
@@ -64,7 +68,9 @@ HttpResult HttpPost(const string url, const string json_body, const int timeout_
    return result;
   }
 
-//--- GET request (used for the /health check in OnInit).
+//--- GET request (used for the /health check in OnInit — /health is
+//    never gated by an API key, so this intentionally has no api_key
+//    parameter).
 HttpResult HttpGet(const string url, const int timeout_ms)
   {
    HttpResult result;

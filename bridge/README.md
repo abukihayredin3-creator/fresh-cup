@@ -66,6 +66,21 @@ Reads `host`/`port` from `config/bridge_config.yaml` (defaults to
 
 Edit either file and restart the bridge process to apply changes.
 
+## Security
+
+`security.api_key` in `bridge_config.yaml` is empty by default, matching
+the bridge's localhost-only default (`server.host: 127.0.0.1`) — no
+authentication needed when nothing outside the machine can reach the
+port. **If you ever change `server.host` to anything other than
+`127.0.0.1`/`localhost`/`::1`, set `security.api_key` to a random secret
+and configure the same value on the EA's `InpApiKey` input.** Without it,
+`/trade_result` lets anyone who can reach the port inject fabricated
+trade outcomes directly into `ai_brain`'s training data, and `/predict`
+can be hit for free compute/log noise. The bridge logs a `WARNING` at
+startup if it detects this exact combination (non-loopback host, no key).
+`/health` is never gated, so simple uptime monitoring keeps working
+either way.
+
 ## API
 
 ### `GET /health`

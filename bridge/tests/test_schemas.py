@@ -140,6 +140,55 @@ def test_trade_result_request_defaults_for_optional_fields():
     assert req.duration_seconds == 0.0
 
 
+def test_predict_request_rejects_zero_atr():
+    payload = _valid_predict_payload()
+    payload["atr"] = 0.0
+    with pytest.raises(ValidationError):
+        PredictRequest.model_validate(payload)
+
+
+def test_predict_request_rejects_negative_atr():
+    payload = _valid_predict_payload()
+    payload["atr"] = -0.001
+    with pytest.raises(ValidationError):
+        PredictRequest.model_validate(payload)
+
+
+def test_predict_request_rejects_nan_atr():
+    payload = _valid_predict_payload()
+    payload["atr"] = float("nan")
+    with pytest.raises(ValidationError):
+        PredictRequest.model_validate(payload)
+
+
+def test_predict_request_rejects_negative_spread():
+    payload = _valid_predict_payload()
+    payload["spread"] = -1.0
+    with pytest.raises(ValidationError):
+        PredictRequest.model_validate(payload)
+
+
+def test_predict_request_rejects_zero_lot_size_on_existing_position():
+    payload = _valid_predict_payload()
+    payload["existing_positions"][0]["lot_size"] = 0.0
+    with pytest.raises(ValidationError):
+        PredictRequest.model_validate(payload)
+
+
+def test_trade_result_request_rejects_zero_lot_size():
+    payload = _valid_trade_result_payload()
+    payload["lot_size"] = 0.0
+    with pytest.raises(ValidationError):
+        TradeResultRequest.model_validate(payload)
+
+
+def test_trade_result_request_rejects_negative_atr():
+    payload = _valid_trade_result_payload()
+    payload["atr"] = -0.001
+    with pytest.raises(ValidationError):
+        TradeResultRequest.model_validate(payload)
+
+
 def test_health_response_defaults():
     resp = HealthResponse(ai_brain_enabled=True)
     assert resp.status == "ok"

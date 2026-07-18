@@ -20,14 +20,14 @@ class OhlcBar(BaseModel):
     high: float
     low: float
     close: float
-    volume: float = 0.0
+    volume: float = Field(default=0.0, ge=0)
 
 
 class ExistingPosition(BaseModel):
     ticket: int
     symbol: str
     direction: Literal["buy", "sell"]
-    lot_size: float
+    lot_size: float = Field(gt=0)
     open_price: float
     sl: float = 0.0
     tp: float = 0.0
@@ -42,9 +42,11 @@ class ExistingPosition(BaseModel):
 class AccountInfo(BaseModel):
     balance: float
     equity: float
+    # free_margin/margin_level can legitimately go negative during a
+    # margin call, so they're intentionally left unconstrained.
     free_margin: float
     margin_level: float = 0.0
-    open_positions: int = 0
+    open_positions: int = Field(default=0, ge=0)
     open_risk_percent: float = 0.0
 
 
@@ -57,8 +59,15 @@ class PredictRequest(BaseModel):
     symbol: str
     timeframe: str
     ohlc: list[OhlcBar]
-    spread: float
-    atr: float
+    spread: float = Field(ge=0)
+    # A zero or negative ATR would produce a degenerate stop_loss ==
+    # entry_price (or, worse, an inverted stop) once translator.py
+    # multiplies it out — reject it here at the API boundary instead of
+    # letting it propagate. This also rejects NaN (NaN > 0 is always
+    # False in IEEE-754, so Pydantic's gt=0 check correctly fails it —
+    # Python's json module otherwise accepts literal NaN/Infinity tokens
+    # as a non-standard extension).
+    atr: float = Field(gt=0)
     account: AccountInfo
     existing_positions: list[ExistingPosition] = Field(default_factory=list)
     # Monetary value of a 1.0 price-unit move per standard lot for this
@@ -107,10 +116,10 @@ class TradeResultRequest(BaseModel):
     exit_price: float
     stop_loss: float
     take_profit: float
-    lot_size: float
-    atr: float
-    spread: float
-    volume: float
+    lot_size: float = Field(gt=0)
+    atr: float = Field(ge=0)
+    spread: float = Field(ge=0)
+    volume: float = Field(ge=0)
     pnl: float
     outcome: Literal["win", "loss", "breakeven"]
     exit_reason: str = "unknown"  # "tp" | "sl" | "manual" | "timeout" | "unknown"

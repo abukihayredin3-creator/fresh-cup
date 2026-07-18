@@ -46,6 +46,7 @@ symbols internally via the `symbol` field on every trade record.
 | Input | Default | Meaning |
 |---|---|---|
 | `InpBridgeUrl` | `http://127.0.0.1:8000` | Bridge base URL |
+| `InpApiKey` | `""` | Sent as `X-API-Key` header; must match `security.api_key` in `bridge_config.yaml` if that's set (leave both blank for a localhost-only bridge) |
 | `InpHttpTimeoutMs` | 5000 | WebRequest timeout (ms) |
 | `InpDecisionIntervalSec` | 60 | `OnTimer` cadence for `/predict` requests |
 | `InpBarCount` | 100 | OHLC bars sent per request |

@@ -9,8 +9,11 @@ rejection is logged via ``bridge.logging_setup.log_event``.
 from __future__ import annotations
 
 import logging
+import secrets
+import traceback
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi.responses import JSONResponse
 
 import ai_brain
 from ai_brain.utils import get_session
@@ -30,6 +33,49 @@ from bridge.smc_features import InsufficientDataError, bars_from_dicts, detect
 app = FastAPI(title="MMXM MT5 Bridge", version="1.0.0")
 logger = get_logger("bridge.app")
 
+if not CONFIG.is_bound_to_loopback() and not CONFIG.api_key:
+    log_event(
+        logger, "WARNING", level=logging.WARNING,
+        message=(
+            f"Bridge is bound to non-loopback host '{CONFIG.host}' with no "
+            "security.api_key configured — /predict and /trade_result are "
+            "reachable by anyone who can reach this port, and /trade_result "
+            "in particular lets them inject fabricated trade outcomes "
+            "straight into ai_brain's training data. Set security.api_key "
+            "in config/bridge_config.yaml."
+        ),
+    )
+
+
+async def require_api_key(x_api_key: str | None = Header(default=None)) -> None:
+    """Shared-secret gate for /predict and /trade_result. A no-op when
+    ``security.api_key`` isn't configured, preserving today's
+    localhost-only-by-default behavior — but see the startup warning
+    above for why leaving it empty on a non-loopback host is a real
+    exposure, not just a formality.
+    """
+    if not CONFIG.api_key:
+        return
+    if not x_api_key or not secrets.compare_digest(x_api_key, CONFIG.api_key):
+        raise HTTPException(status_code=401, detail="invalid_or_missing_api_key")
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Last-resort safety net: without this, an unexpected error anywhere
+    in a route (a bad config value, an ai_brain edge case) produces a
+    bare framework 500 that never touches bridge.log — violating the
+    "log every error" requirement. This guarantees every failure is
+    logged with a full traceback and the EA still gets back a clean
+    JSON body (it only acts on 2xx responses either way).
+    """
+    log_event(
+        logger, "ERROR", level=logging.ERROR,
+        path=request.url.path, method=request.method,
+        exception=repr(exc), traceback=traceback.format_exc(),
+    )
+    return JSONResponse(status_code=500, content={"detail": "internal_server_error"})
+
 
 @app.get("/health", response_model=HealthResponse)
 async def health() -> HealthResponse:
@@ -41,7 +87,7 @@ def _reject(request_id: str, reason: str, confidence: float = 0.0, explanation: 
     return translator.hold_response(request_id, reason, confidence=confidence, explanation=explanation)
 
 
-@app.post("/predict", response_model=PredictResponse)
+@app.post("/predict", response_model=PredictResponse, dependencies=[Depends(require_api_key)])
 async def predict(request: PredictRequest) -> PredictResponse:
     log_event(
         logger, "REQUEST", request_id=request.request_id, symbol=request.symbol,
@@ -101,7 +147,7 @@ async def predict(request: PredictRequest) -> PredictResponse:
     return response
 
 
-@app.post("/trade_result", response_model=TradeResultResponse)
+@app.post("/trade_result", response_model=TradeResultResponse, dependencies=[Depends(require_api_key)])
 async def trade_result(result: TradeResultRequest) -> TradeResultResponse:
     log_event(
         logger, "TRADE_RESULT", trade_id=result.trade_id, symbol=result.symbol,

@@ -72,6 +72,19 @@ class BridgeConfig:
 
     log_level: str = "INFO"
 
+    # Shared-secret header required on /predict and /trade_result when
+    # non-empty (checked via constant-time comparison in bridge/app.py).
+    # Empty by default so existing localhost-only setups keep working
+    # unchanged — but that means an empty key on a non-loopback host is
+    # a real exposure; bridge/app.py logs a startup warning for exactly
+    # that combination.
+    api_key: str = ""
+
+    LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "::1")
+
+    def is_bound_to_loopback(self) -> bool:
+        return self.host in self.LOOPBACK_HOSTS
+
     @classmethod
     def from_files(cls, base_dir: Path | str | None = None) -> "BridgeConfig":
         base = Path(base_dir) if base_dir is not None else Path(
@@ -88,12 +101,14 @@ class BridgeConfig:
         risk = bridge_yaml.get("risk", {}) or {}
         execution = bridge_yaml.get("execution", {}) or {}
         news_filter = bridge_yaml.get("news_filter", {}) or {}
+        security = bridge_yaml.get("security", {}) or {}
         trading_hours_raw = execution.get("trading_hours", {}) or {}
+        trading_hours_start = trading_hours_raw.get("start", "00:00")
+        trading_hours_end = trading_hours_raw.get("end", "23:59")
+        _validate_hhmm(trading_hours_start, "execution.trading_hours.start")
+        _validate_hhmm(trading_hours_end, "execution.trading_hours.end")
 
-        trading_hours = TradingHours(
-            start=trading_hours_raw.get("start", "00:00"),
-            end=trading_hours_raw.get("end", "23:59"),
-        )
+        trading_hours = TradingHours(start=trading_hours_start, end=trading_hours_end)
 
         blackout_windows = [
             BlackoutWindow(
@@ -127,6 +142,7 @@ class BridgeConfig:
             news_filter_enabled=bool(news_filter.get("enabled", True)),
             blackout_windows=blackout_windows,
             log_level=bridge_yaml.get("log_level", "INFO"),
+            api_key=str(security.get("api_key", "") or ""),
         )
 
     def max_spread_for(self, symbol: str) -> float:
@@ -164,6 +180,23 @@ class BridgeConfig:
             if window.contains(symbol, when):
                 return window
         return None
+
+
+def _validate_hhmm(value: str, field_name: str) -> None:
+    """Fail fast at config-load time (process startup) rather than on
+    every subsequent /predict request — a malformed trading_hours value
+    would otherwise break 100% of traffic continuously instead of once,
+    loudly, at boot.
+    """
+    parts = value.split(":")
+    if len(parts) != 2:
+        raise ValueError(f"{field_name} must be 'HH:MM', got {value!r}")
+    try:
+        hour, minute = int(parts[0]), int(parts[1])
+    except ValueError:
+        raise ValueError(f"{field_name} must be 'HH:MM' with integer parts, got {value!r}") from None
+    if not (0 <= hour <= 23 and 0 <= minute <= 59):
+        raise ValueError(f"{field_name} must be a valid 24h time, got {value!r}")
 
 
 def _load_yaml(path: Path) -> dict:

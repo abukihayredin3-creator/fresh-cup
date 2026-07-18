@@ -202,3 +202,41 @@ def test_predict_reports_ai_brain_disabled_reason(bridge_client, tmp_ai_brain_co
 def test_predict_malformed_request_returns_422(bridge_client):
     resp = bridge_client.post("/predict", json={"request_id": "r1"})  # missing required fields
     assert resp.status_code == 422
+
+
+def test_unhandled_exception_is_logged_and_returns_clean_500(tmp_bridge_config, tmp_ai_brain_config, monkeypatch):
+    # TestClient re-raises server exceptions by default; disable that so
+    # we can verify the exception_handler actually converts it into a
+    # clean JSON 500 rather than propagating to the test itself.
+    import logging
+    from logging.handlers import RotatingFileHandler
+    from pathlib import Path
+
+    from fastapi.testclient import TestClient
+
+    from bridge.app import app
+    import ai_brain
+
+    def boom(candidate, account_risk=None):
+        raise RuntimeError("simulated unexpected failure")
+
+    monkeypatch.setattr(ai_brain, "get_prediction", boom)
+
+    with TestClient(app, raise_server_exceptions=False) as client:
+        payload = _predict_payload(UPTREND_OHLC)
+        resp = client.post("/predict", json=payload)
+
+    assert resp.status_code == 500
+    assert resp.json() == {"detail": "internal_server_error"}
+
+    # bridge.app's logger is created once (get_logger caches handlers for
+    # the process lifetime), so its file handler may point at an earlier
+    # test's tmp logs_dir rather than this test's — locate it via the
+    # handler itself instead of assuming it matches tmp_bridge_config.
+    app_logger = logging.getLogger("bridge.app")
+    file_handler = next(h for h in app_logger.handlers if isinstance(h, RotatingFileHandler))
+    log_content = Path(file_handler.baseFilename).read_text()
+
+    assert "ERROR" in log_content
+    assert "simulated unexpected failure" in log_content
+    assert "RuntimeError" in log_content

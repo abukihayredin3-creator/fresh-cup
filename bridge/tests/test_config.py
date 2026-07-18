@@ -1,5 +1,7 @@
 from datetime import datetime, timezone
 
+import pytest
+
 from bridge.tests.conftest import reload_bridge_config, write_bridge_yaml, write_news_blackout_yaml
 
 
@@ -85,6 +87,33 @@ def test_news_filter_disabled_ignores_blackout_windows(tmp_path):
 
     inside = datetime(2026, 2, 5, 12, 30, tzinfo=timezone.utc)
     assert config.active_blackout("EURUSD", inside) is None
+
+
+def test_malformed_trading_hours_fails_fast_at_load_time(tmp_path):
+    write_bridge_yaml(tmp_path, execution={"trading_hours": {"start": "not-a-time", "end": "23:59"}})
+    write_news_blackout_yaml(tmp_path)
+    from bridge.config import BridgeConfig
+
+    with pytest.raises(ValueError, match="trading_hours.start"):
+        BridgeConfig.from_files(base_dir=tmp_path)
+
+
+def test_trading_hours_out_of_range_fails_fast(tmp_path):
+    write_bridge_yaml(tmp_path, execution={"trading_hours": {"start": "25:00", "end": "23:59"}})
+    write_news_blackout_yaml(tmp_path)
+    from bridge.config import BridgeConfig
+
+    with pytest.raises(ValueError):
+        BridgeConfig.from_files(base_dir=tmp_path)
+
+
+def test_trading_hours_missing_colon_fails_fast(tmp_path):
+    write_bridge_yaml(tmp_path, execution={"trading_hours": {"start": "0800", "end": "23:59"}})
+    write_news_blackout_yaml(tmp_path)
+    from bridge.config import BridgeConfig
+
+    with pytest.raises(ValueError):
+        BridgeConfig.from_files(base_dir=tmp_path)
 
 
 def test_missing_config_files_fall_back_to_defaults(tmp_path):

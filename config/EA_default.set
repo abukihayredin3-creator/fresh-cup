@@ -3,6 +3,7 @@
 ; Adjust InpBridgeUrl/InpMagicNumber per instance if running multiple
 ; symbols, each with its own chart/magic number.
 InpBridgeUrl=http://127.0.0.1:8000
+InpApiKey=
 InpHttpTimeoutMs=5000
 InpDecisionIntervalSec=60
 InpBarCount=100
