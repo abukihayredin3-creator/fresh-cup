@@ -1,0 +1,15 @@
+// Fresh Cup — Prisma schema.
+// Phase 0 intentionally ships no domain models: see
+// fresh-cup-platform/docs/DATABASE_SCHEMA.md for the full design these
+// models are generated from once Phase 1 (ordering) begins. This file
+// exists now so the datasource/generator wiring, migrations tooling, and
+// PrismaService are proven end-to-end before real tables land on top.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}

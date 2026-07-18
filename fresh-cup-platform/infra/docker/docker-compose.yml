@@ -1,0 +1,62 @@
+# Local development infrastructure for Fresh Cup.
+# Run from the monorepo root: docker compose -f infra/docker/docker-compose.yml up -d
+#
+# This brings up the stateful services the API depends on (Postgres, Redis,
+# and MinIO as a local S3-compatible object store). The apps themselves
+# (api/web/admin/delivery/mobile) run on the host via `pnpm dev` for fast
+# iteration — only Phase 7-style deployments run the apps in containers too
+# (see the api/web/admin/delivery Dockerfiles alongside this file).
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-fresh_cup}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-fresh_cup}
+      POSTGRES_DB: ${POSTGRES_DB:-fresh_cup_dev}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - fresh_cup_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-fresh_cup}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - fresh_cup_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-fresh_cup}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-fresh_cup_minio}
+    ports:
+      - "${MINIO_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - fresh_cup_minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  fresh_cup_postgres_data:
+  fresh_cup_redis_data:
+  fresh_cup_minio_data:

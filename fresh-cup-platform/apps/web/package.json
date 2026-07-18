@@ -1,0 +1,34 @@
+{
+  "name": "@fresh-cup/web",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Fresh Cup — marketing site, QR menu, and customer portal",
+  "scripts": {
+    "dev": "next dev -p 3000",
+    "build": "next build",
+    "start": "next start -p 3000",
+    "lint": "eslint . --max-warnings 0",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf .next .turbo"
+  },
+  "dependencies": {
+    "@fresh-cup/api-client": "workspace:*",
+    "@fresh-cup/types": "workspace:*",
+    "@fresh-cup/ui": "workspace:*",
+    "@fresh-cup/utils": "workspace:*",
+    "next": "16.2.10",
+    "react": "19.2.4",
+    "react-dom": "19.2.4"
+  },
+  "devDependencies": {
+    "@fresh-cup/config": "workspace:*",
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.2.10",
+    "tailwindcss": "^4",
+    "typescript": "^5"
+  }
+}

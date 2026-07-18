@@ -1,0 +1,13 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+
+# Explicit allowlist for workspace dependencies that run install-time build
+# scripts, so `pnpm install` is non-interactive and reproducible in CI/Docker
+# instead of prompting via `pnpm approve-builds`.
+onlyBuiltDependencies:
+  - "@prisma/client"
+  - "@prisma/engines"
+  - prisma
+  - sharp
+  - unrs-resolver

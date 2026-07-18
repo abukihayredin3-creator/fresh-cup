@@ -1,0 +1,41 @@
+/**
+ * Shared Tailwind v4 theme (CSS-first config) — Fresh Cup brand tokens.
+ * Source of truth: fresh-cup-platform/docs/DESIGN_SYSTEM.md
+ * Imported by each Next.js app's globals.css. Mirrored for React Native via
+ * NativeWind in apps/mobile using ./preset.js (Tailwind v3-style JS config,
+ * since NativeWind's tooling still expects it).
+ */
+@theme {
+  --color-green-900: #1b4332;
+  --color-green-700: #2d6a4f;
+  --color-green-100: #e4f0e9;
+
+  --color-orange-600: #f2732e;
+  --color-orange-100: #fde9dc;
+
+  --color-warm-white: #fbf6ef;
+
+  --color-neutral-900: #1f2420;
+  --color-neutral-500: #6b7268;
+  --color-neutral-200: #e7e4dd;
+
+  --color-error-600: #c0392b;
+  --color-success-600: #2d6a4f;
+
+  --font-display: "Fraunces", serif;
+  --font-sans: "Inter", sans-serif;
+  --font-ethiopic: "Noto Sans Ethiopic", sans-serif;
+
+  --text-caption: 0.75rem;
+  --text-body-sm: 0.875rem;
+  --text-body: 1rem;
+  --text-h5: 1.25rem;
+  --text-h4: 1.5625rem;
+  --text-h3: 1.953rem;
+  --text-h2: 2.441rem;
+  --text-h1: 3.052rem;
+
+  --radius-DEFAULT: 8px;
+  --radius-lg: 16px;
+  --radius-pill: 999px;
+}

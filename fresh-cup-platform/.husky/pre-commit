@@ -1,0 +1,1 @@
+cd fresh-cup-platform && npx lint-staged

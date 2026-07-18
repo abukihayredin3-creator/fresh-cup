@@ -1,0 +1,15 @@
+@import "tailwindcss";
+@import "@fresh-cup/config/tailwind/theme.css";
+
+@theme inline {
+  --color-background: var(--color-warm-white);
+  --color-foreground: var(--color-neutral-900);
+  --font-sans: var(--font-inter);
+  --font-display: var(--font-fraunces);
+}
+
+body {
+  background: var(--color-background);
+  color: var(--color-foreground);
+  font-family: var(--font-sans);
+}

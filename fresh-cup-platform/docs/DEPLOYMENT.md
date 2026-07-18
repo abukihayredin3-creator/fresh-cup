@@ -2,11 +2,11 @@
 
 ## Environments
 
-| Environment | Purpose | Data |
-|---|---|---|
-| `local` | Developer machines | Docker Compose: Postgres, Redis, MinIO (S3-compatible), API, seeded fixtures |
-| `staging` | Pre-production verification, QA, demo | Isolated DB, sandbox Chapa credentials, sandbox SMS |
-| `production` | Real customers | Live DB, live payment/SMS credentials, backups enabled |
+| Environment  | Purpose                               | Data                                                                         |
+| ------------ | ------------------------------------- | ---------------------------------------------------------------------------- |
+| `local`      | Developer machines                    | Docker Compose: Postgres, Redis, MinIO (S3-compatible), API, seeded fixtures |
+| `staging`    | Pre-production verification, QA, demo | Isolated DB, sandbox Chapa credentials, sandbox SMS                          |
+| `production` | Real customers                        | Live DB, live payment/SMS credentials, backups enabled                       |
 
 Promotion path: every merge to `main` deploys to `staging` automatically;
 promotion to `production` is a manual, explicit action (tagged release),
@@ -14,6 +14,7 @@ never automatic — order/payment correctness bugs in production are the
 single most expensive category of mistake this system can make.
 
 ## Infrastructure (target: AWS, region `af-south-1` — Cape Town, the closest
+
 AWS region to Addis Ababa; re-evaluate latency vs. `eu-central-1` once
 real traffic data exists)
 
