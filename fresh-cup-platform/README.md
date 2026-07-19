@@ -8,26 +8,33 @@ admin dashboard, customer portal, delivery dashboard, loyalty system, QR
 menu, inventory management, and analytics — built as one coherent system
 rather than disconnected projects.
 
-> **Status:** Phase 6 complete — `apps/api` implements auth/RBAC, catalog,
-> inventory (Phase 1), the full ordering engine — cart, checkout, payments,
-> coupons, loyalty, real-time order updates (Phase 2) — the restaurant
-> operations platform — kitchen display, delivery/driver management,
-> inventory automation, purchasing, audit logging, and an admin
-> dashboard/analytics (Phase 3) — the customer experience platform:
+> **Status:** Phase 11 (Part 1) complete — `apps/api` implements auth/RBAC,
+> catalog, inventory (Phase 1), the full ordering engine — cart, checkout,
+> payments, coupons, loyalty, real-time order updates (Phase 2) — the
+> restaurant operations platform — kitchen display, delivery/driver
+> management, inventory automation, purchasing, audit logging, and an
+> admin dashboard/analytics (Phase 3) — the customer experience platform:
 > `apps/web` (full site, i18n, dark mode, PWA) and `apps/mobile` (Expo/React
 > Native), both consuming those APIs end to end with e2e/component test
 > coverage (Phase 4) — the Admin Platform (Phase 5): new
 > employees/marketing/security backend modules plus `apps/admin`, a
 > complete staff/owner dashboard (dashboard, analytics, branches,
 > employees, menu CMS, inventory/purchasing, kitchen/delivery, marketing,
-> customers, reports/audit log, settings/security) — and an AI & Business
+> customers, reports/audit log, settings/security) — an AI & Business
 > Intelligence platform (Phase 6): a new `modules/intelligence` backend
 > covering recommendations, customer/inventory/marketing intelligence,
 > sales forecasting, executive BI, and an AI assistant, all hand-rolled
 > (no external ML service), with public recommendation surfaces on
-> `apps/web` and an "Intelligence" section in `apps/admin`. `apps/delivery`
-> remains a scaffold — its driver-facing PWA is the one frontend not yet
-> built. See [`docs/ROADMAP.md`](docs/ROADMAP.md).
+> `apps/web` and an "Intelligence" section in `apps/admin` — and, backend
+> only so far, a Restaurant Intelligence Platform (Phase 11): a second
+> `apps/api/src/intelligence` tree with a swappable LLM/embedding/vector
+> provider layer (Anthropic/OpenAI/Azure/OpenRouter/Ollama/Gemini;
+> zero-dependency defaults for local dev), long-term AI memory, and 8 AI
+> domains — Executive/Sales/Customer/Inventory/Marketing (wrapping Phase 6)
+> plus net-new Kitchen/Delivery/Workforce AI — every answer explained and
+> confidence-scored, never performing an irreversible action.
+> `apps/delivery` remains a scaffold — its driver-facing PWA is the one
+> frontend not yet built. See [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
 ## Start here
 
@@ -39,20 +46,26 @@ rather than disconnected projects.
 | [`docs/FOLDER_STRUCTURE.md`](docs/FOLDER_STRUCTURE.md) | Monorepo layout for every app and shared package                                                                         |
 | [`docs/DESIGN_SYSTEM.md`](docs/DESIGN_SYSTEM.md)       | Brand identity, color system, typography, component tokens                                                               |
 | [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)             | Infrastructure, environments, CI/CD pipeline                                                                             |
-| [`docs/ROADMAP.md`](docs/ROADMAP.md)                   | Phased implementation plan, phase 0 → phase 10                                                                           |
+| [`docs/ROADMAP.md`](docs/ROADMAP.md)                   | Phased implementation plan, phase 0 → phase 11                                                                           |
 
 ## What's here
 
-- **`apps/api`** — NestJS backend implementing Phases 1–3, 5, and 6 (see
-  [`apps/api/README.md`](apps/api/README.md) for the endpoint summary, or
-  [`docs/API_DESIGN.md`](docs/API_DESIGN.md) for the full catalog). Health
-  checks at `/health` (liveness) and `/health/ready` (Postgres + Redis
-  connectivity), env validation on boot. `modules/intelligence` (Phase 6)
-  adds recommendations, customer/inventory/marketing intelligence, sales
-  forecasting (a nightly `@nestjs/schedule` job regenerates it), executive
-  BI, and an AI assistant — all hand-rolled statistics, no external ML
-  service; the AI assistant uses the Claude API when `ANTHROPIC_API_KEY`
-  is set and a deterministic template router otherwise.
+- **`apps/api`** — NestJS backend implementing Phases 1–3, 5, 6, and 11
+  (see [`apps/api/README.md`](apps/api/README.md) for the endpoint
+  summary, or [`docs/API_DESIGN.md`](docs/API_DESIGN.md) for the full
+  catalog). Health checks at `/health` (liveness) and `/health/ready`
+  (Postgres + Redis connectivity), env validation on boot.
+  `modules/intelligence` (Phase 6) adds recommendations, customer/
+  inventory/marketing intelligence, sales forecasting (a nightly
+  `@nestjs/schedule` job regenerates it), executive BI, and an AI
+  assistant — all hand-rolled statistics, no external ML service; the AI
+  assistant uses the Claude API when `ANTHROPIC_API_KEY` is set and a
+  deterministic template router otherwise. `intelligence/` (Phase 11) is
+  a sibling tree wrapping five of those services with explanation +
+  confidence-score framing, adding Kitchen/Delivery/Workforce AI, and
+  owning a swappable `LLM_PROVIDER`/`EMBEDDING_PROVIDER`/`VECTOR_PROVIDER`
+  layer plus long-term AI memory — every provider defaults to a
+  zero-external-dependency implementation.
 - **`apps/web`** — Next.js customer site: marketing/menu/cart/checkout/live
   order tracking/account area, i18n (English/Amharic), dark mode, PWA
   (installable + offline caching), WCAG 2 AA (port 3000), plus Phase 6

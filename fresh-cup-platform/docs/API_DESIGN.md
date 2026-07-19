@@ -520,6 +520,75 @@ to `AiAssistantQuery` (question, answer, which tools were called with what
 result, and an `outcome` of `ANSWERED`/`FALLBACK`/`ERROR`) so every answer
 is traceable back to the real data it cites.
 
+## Restaurant Intelligence Platform (Phase 11)
+
+`manager`/`admin` only unless noted — same additional-role pattern as
+Phase 6 (Inventory AI also allows `INVENTORY_STAFF`, Marketing AI also
+allows `MARKETING_STAFF`, Kitchen AI also allows `KITCHEN`). Every domain
+method returns an `AiInsightDto` (or an array of them):
+`{ title, explanation, confidence, data, memoryEntryId? }` — an
+explanation and a 0-1 confidence score alongside every prediction/
+recommendation, per this phase's Core Principles. See
+`docs/ARCHITECTURE.md` for the provider-abstraction rationale
+(`LLM_PROVIDER`/`EMBEDDING_PROVIDER`/`VECTOR_PROVIDER`).
+
+| Method | Path                                             | Notes                                                                                           |
+| ------ | ------------------------------------------------ | ----------------------------------------------------------------------------------------------- |
+| GET    | `/admin/ai/executive/daily-summary`              | today's revenue/profit/orders, explained                                                        |
+| GET    | `/admin/ai/executive/weekly-report`              | trailing 7 days                                                                                 |
+| GET    | `/admin/ai/executive/revenue-explanation`        | trend direction (rising/falling/flat) from linear regression                                    |
+| GET    | `/admin/ai/executive/risks`                      | revenue decline, elevated inventory waste, low repeat-customer rate                             |
+| GET    | `/admin/ai/executive/growth-opportunities`       | segment-targeted opportunities, from Marketing AI's target suggestions                          |
+| GET    | `/admin/ai/sales/demand-forecast`                | wraps Phase 6's `ForecastingService` (`SALES_REVENUE`, `DAILY`)                                 |
+| GET    | `/admin/ai/sales/peak-hour`                      | highest-demand hour from `hourlyDemand`                                                         |
+| GET    | `/admin/ai/sales/average-ticket`                 | predicted revenue / predicted orders for the next period                                        |
+| GET    | `/admin/ai/sales/best-sellers`                   | top products by summed forecasted demand                                                        |
+| GET    | `/admin/ai/sales/cross-sell?menuItemId=`         | wraps `RecommendationsService.upsellCrossSell`                                                  |
+| GET    | `/admin/ai/customer/{userId}/lifetime-value`     | wraps `CustomerIntelligenceService.customerProfile`                                             |
+| GET    | `/admin/ai/customer/churn-risk`                  | "At Risk"/"Lost" segment customers, highest risk first                                          |
+| GET    | `/admin/ai/customer/behavior-clusters`           | RFM segment sizes/spend, explained                                                              |
+| GET    | `/admin/ai/customer/{userId}/favorite-products`  | a customer's favorite categories                                                                |
+| GET    | `/admin/ai/customer/{userId}/purchase-patterns`  | preferred order hour/payment method/frequency                                                   |
+| GET    | `/admin/ai/inventory/restocking`                 | wraps Phase 6's `InventoryIntelligenceService`                                                  |
+| GET    | `/admin/ai/inventory/waste-prediction`           | items above the 0.1 waste-probability threshold                                                 |
+| GET    | `/admin/ai/inventory/ingredient-demand-forecast` | `ForecastMetric.INGREDIENT_DEMAND`, requires `AI_FORECASTING_ENABLED`                           |
+| GET    | `/admin/ai/inventory/supplier-optimization`      | net-new: lead-time + reliability per supplier, from purchase-order history                      |
+| GET    | `/admin/ai/kitchen/bottlenecks`                  | net-new: stations where actual prep time overruns the slowest item's estimate                   |
+| GET    | `/admin/ai/kitchen/station-workload`             | net-new: items prepared per station, trailing 30 days                                           |
+| GET    | `/admin/ai/kitchen/prep-time-anomalies`          | net-new: orders >2 standard deviations above mean prep time                                     |
+| GET    | `/admin/ai/kitchen/efficiency-recommendations`   | net-new: stations with a persistent (3+) bottleneck pattern                                     |
+| GET    | `/admin/ai/delivery/eta?distanceKm=`             | net-new: predicted duration from the fleet's recent average speed                               |
+| GET    | `/admin/ai/delivery/delays`                      | net-new: in-flight deliveries past 1.3x their expected duration                                 |
+| GET    | `/admin/ai/delivery/zone-optimization`           | net-new: per-zone fee/distance/volume                                                           |
+| GET    | `/admin/ai/delivery/driver-utilization`          | net-new: per-driver delivery volume + average duration                                          |
+| GET    | `/admin/ai/marketing/campaign-recommendations`   | wraps `MarketingIntelligenceService.targetSuggestions`                                          |
+| GET    | `/admin/ai/marketing/coupon-optimization`        | wraps `couponOptimization`                                                                      |
+| GET    | `/admin/ai/marketing/promotion-roi`              | wraps `campaignPerformance`, filtered to sent campaigns                                         |
+| GET    | `/admin/ai/marketing/customer-targeting`         | top referrers + near-next-tier loyalty members                                                  |
+| GET    | `/admin/ai/workforce/scheduling-insights`        | net-new, manager/admin only: order volume vs. scheduled coverage per hour                       |
+| GET    | `/admin/ai/workforce/attendance-anomalies`       | net-new: no-shows and late (>15min) clock-ins vs. scheduled shifts                              |
+| GET    | `/admin/ai/workforce/performance-trends`         | net-new: trailing-30d vs. prior-30d rating trend per employee                                   |
+| GET    | `/admin/ai/workforce/labor-coverage`             | net-new: orders per scheduled labor hour (coverage, not a cost figure — no wage column exists)  |
+| GET    | `/admin/ai/memory`                               | recall AI memory entries; `domain`/`kind`/`branchId`/`limit` query params                       |
+| POST   | `/admin/ai/memory/{id}/outcome`                  | body `{ accepted }`; records a manager's accept/reject decision on a suggestion                 |
+| POST   | `/admin/ai/assistant/ask`                        | body `{ question, branchId? }`; provider-agnostic version of Phase 6's AI Assistant — see below |
+
+### Provider-agnostic AI Assistant
+
+Distinct from Phase 6's `POST /admin/ai-assistant/ask` (Claude-only, its
+own tool set — unchanged). This one routes through `AgentRunnerService`
+against whichever `LLM_PROVIDER` is configured (Anthropic/OpenAI/
+Azure OpenAI/OpenRouter/Ollama/Gemini/none), using tools that delegate to
+the domain AI services above, so an answer is never a bare LLM claim
+regardless of provider. With `LLM_PROVIDER=none` (the default), it returns
+a message pointing at the domain AI dashboards instead of fabricating
+prose. Every exchange is persisted to AI memory
+(`kind=CONVERSATION, domain="assistant"`). `AiSecurityService` refuses any
+question asking for API keys/passwords/secrets/JWTs/system prompts before
+it reaches an LLM or tool, and `SecretRedactionInterceptor` scrubs
+secret-shaped substrings from every response body in this section as a
+second layer of defense.
+
 ## Audit logs (Phase 3)
 
 An `@Auditable(entityType)` decorator + a global interceptor write one

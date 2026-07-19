@@ -145,6 +145,7 @@ module (e.g., Notifications) becomes a bottleneck.
 - **Notifications** — SMS, push, email dispatch (consumes events from other modules)
 - **Analytics** — on-demand admin dashboard/sales/item/customer reporting; a scheduled-aggregation layer is future work once order volume outgrows live queries (see `ROADMAP.md` Phase 7)
 - **Intelligence** (Phase 6) — recommendations, customer/inventory/marketing intelligence, sales forecasting, executive BI, and an AI assistant, all hand-rolled statistics over the tables above — see §6a
+- **Restaurant Intelligence Platform** (Phase 11, `apps/api/src/intelligence`) — wraps five of Phase 6's services with explanation/confidence framing, adds kitchen/delivery/workforce AI, and owns a swappable LLM/embedding/vector provider layer — see §6b
 - **Audit** — a cross-cutting interceptor logging every admin mutation (actor, action, entity, after-state), not a bounded context of its own
 - **Branches** — restaurant locations (one today, extensible)
 
@@ -192,6 +193,70 @@ keyword router calls the same tools directly. Either path is equally
 "real" — the LLM, when present, only phrases pre-fetched facts, it never
 originates one, and every query is logged to `AiAssistantQuery` with the
 tool calls that backed the answer.
+
+### 6b. Restaurant Intelligence Platform (Phase 11)
+
+A second, sibling AI tree — `apps/api/src/intelligence`, distinct from
+Phase 6's `modules/intelligence` (§6a), which it imports from and never
+rewrites. Its job is twofold: wrap five of Phase 6's services (executive,
+sales/forecasting, customer, inventory, marketing) with a uniform
+explanation + 0-1 confidence score on every answer, and cover three
+domains Phase 6 never touched — kitchen, delivery, workforce — computed
+on demand from tables Phases 1-5 already own, no new columns needed.
+
+**Provider abstraction.** Three interfaces — `LlmProvider`,
+`EmbeddingProvider`, `VectorProvider` — each resolved by a factory reading
+one env var (`LLM_PROVIDER`/`EMBEDDING_PROVIDER`/`VECTOR_PROVIDER`), so
+swapping the underlying vendor is a config change, never a code change:
+
+- **LLM**: Anthropic (reuses Phase 6's `@anthropic-ai/sdk`), one
+  fetch-based OpenAI-compatible client shared by OpenAI/Azure OpenAI/
+  OpenRouter/Ollama (they speak the same `/chat/completions` wire
+  format), Gemini (fetch-based), and `NullLlmProvider` — the default,
+  calling nothing.
+- **Embeddings**: OpenAI/Voyage/Cohere (fetch-based), and
+  `LocalEmbeddingProvider` — the default, a deterministic hashed
+  bag-of-words vector. Same "no heavy dependency for a simple need"
+  judgment call as §6a's hand-rolled statistics — real semantic
+  embeddings are one config change away when a real workload needs them.
+- **Vector**: OpenSearch/Pinecone/Qdrant (fetch-based), and
+  `PgVectorProvider` — the default, storing embeddings in a plain
+  Postgres `double precision[]` column and computing cosine similarity in
+  application code. §6a's "no vector database anywhere in this stack"
+  claim still holds for the out-of-the-box configuration; a real ANN
+  index is a `VECTOR_PROVIDER` change away, not a rewrite.
+
+**AI memory & RAG.** `AiMemoryService` persists conversations, business
+decisions, recommendations, and accept/reject outcomes
+(`AI_MEMORY_ENABLED`, on by default — the write is local and cheap).
+`RagService` embeds and indexes those entries into the vector store when
+`AI_RAG_ENABLED` is explicitly turned on (off by default — retrieval has
+nothing to retrieve, and costs embedding-provider calls, until something
+is indexed) and powers semantic recall for a later query.
+
+**Guardrails.** Every domain method returns an `AiInsightDto`
+(`title`, `explanation`, `confidence`, `data`) — Core Principles from this
+phase's spec: an AI recommendation always explains itself and always
+carries a confidence score, and it never performs an irreversible action.
+`AiSecurityService` pattern-matches a question against what it's asking
+for (API keys, passwords, secrets, JWTs, system prompts) and refuses
+before it ever reaches an LLM or tool; `SecretRedactionInterceptor`
+additionally scrubs secret-shaped substrings (JWTs, vendor key prefixes,
+credentialed connection strings, bearer tokens) from every response body
+as a second layer, applied to every controller in this tree.
+`AiAuthorizationGuard` + `@RequireAiAuthorization()` are the enforcement
+point for a future action-taking endpoint (none exists yet — every
+current domain method only forecasts, recommends, summarizes, or
+explains) requiring an explicit `x-ai-action-confirmed` header, so an
+irreversible action can never be inferred from a prior request.
+
+**`AgentRunnerService`** is the provider-agnostic version of §6a's
+hand-written Anthropic tool-use loop — it drives any `LlmProvider`
+through one flattened message format, and `AssistantAiService`
+(`POST /admin/ai/assistant/ask`) uses it to prove the abstraction end to
+end, with tools that delegate to the domain AI services above rather than
+duplicating their logic. Phase 6's `AiAssistantService` is untouched and
+keeps its own Claude-only tool set.
 
 ## 7. API architecture
 

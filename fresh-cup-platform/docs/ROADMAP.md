@@ -362,6 +362,88 @@ breaking migration once real orders/customers exist.
   that Phase 4 shipped a client that actually registers device tokens
 - **Exit criteria:** repeat customers can redeem points for a reward; marketing can run a scheduled coupon campaign without engineering involvement
 
+## Phase 11 — Restaurant Intelligence Platform (Part 1: provider-agnostic LLM/RAG layer) ✅
+
+- New `apps/api/src/intelligence/` — a second, sibling AI tree alongside
+  Phase 6's `modules/intelligence`, not a replacement or rewrite of it.
+  Phase 6 stays exactly as shipped; this phase wraps five of its six
+  domains (executive, sales/forecasting, customer, inventory, marketing)
+  with explanation + confidence-score framing and adds three domains
+  Phase 6 never covered (kitchen, delivery, workforce), built directly
+  from existing schema (`Order.preparingAt`/`readyAt`, `Delivery.distanceKm`/
+  `pickedUpAt`/`deliveredAt`, `Shift`/`Attendance`/`PerformanceNote`) — no
+  new columns needed for any of the three
+- **Provider abstraction** — `LlmProvider`, `EmbeddingProvider`,
+  `VectorProvider` interfaces, each with a factory reading
+  `LLM_PROVIDER`/`EMBEDDING_PROVIDER`/`VECTOR_PROVIDER`:
+  - LLM: Anthropic (reuses Phase 6's `@anthropic-ai/sdk` dependency),
+    OpenAI/Azure OpenAI/OpenRouter/Ollama (one fetch-based
+    OpenAI-compatible client, since all four speak the same
+    `/chat/completions` wire format), Gemini (fetch-based), and a
+    dependency-free `NullLlmProvider` default
+  - Embeddings: OpenAI/Voyage/Cohere (fetch-based), and a dependency-free
+    default `LocalEmbeddingProvider` (deterministic hashed bag-of-words
+    vector — the embedding equivalent of Phase 6's hand-rolled statistics)
+  - Vector: OpenSearch/Pinecone/Qdrant (fetch-based), and a dependency-free
+    default `PgVectorProvider` (a new `vector_entries` table, cosine
+    similarity computed in application code — no Postgres `pgvector`
+    extension required)
+  - Every default is zero-external-dependency, so the platform works out
+    of the box in dev/CI; switching providers is a config change only,
+    same "sandbox fallback" philosophy as `ChapaPaymentProvider`
+- **AI Memory** — a new `ai_memory_entries` table records conversations,
+  business decisions, recommendations, and accept/reject outcomes, scoped
+  by domain; `AiMemoryService` is a no-op when `AI_MEMORY_ENABLED=false`.
+  `RagService` embeds + indexes memory entries into the vector store when
+  `AI_RAG_ENABLED=true` (off by default — retrieval needs something
+  embedded first) and powers semantic recall
+- **Guardrails** — `AiSecurityService` refuses questions that ask for API
+  keys/passwords/secrets/JWTs/system prompts before they ever reach an
+  LLM or tool, and redacts secret-shaped substrings (JWTs, vendor API key
+  prefixes, credentialed connection strings, bearer tokens) from every AI
+  response via `SecretRedactionInterceptor`. `AiAuthorizationGuard` +
+  `@RequireAiAuthorization()` exist as the enforcement point for a future
+  action-taking endpoint — no endpoint in this phase performs an
+  irreversible action, since every domain method only forecasts,
+  recommends, summarizes, or explains
+- **`AgentRunnerService`** — a provider-agnostic version of Phase 6's
+  hand-written Anthropic tool-use loop, driving any `LlmProvider` through
+  a flattened, vendor-neutral message format each provider translates
+  to/from its own wire shape
+- **8 AI domains**, each returning `AiInsightDto` (title + explanation +
+  confidence score + the raw data behind it, per this phase's Core
+  Principles): Executive, Sales, Customer, Inventory, and Marketing AI
+  wrap the matching Phase 6 service; Kitchen AI (prep bottlenecks, station
+  workload, prep-time anomalies), Delivery AI (ETA prediction from fleet
+  average speed, delay detection, zone/driver metrics), and Workforce AI
+  (scheduling coverage vs. order volume, attendance no-show/late
+  detection, performance trend, labor **coverage** efficiency — not a
+  cost figure, since the schema has no wage column and Core Principle 1
+  rules out inventing one) are net-new
+- **`AssistantAiService`** — a second, provider-agnostic chat surface
+  (`POST /admin/ai/assistant/ask`) proving the LLM abstraction end to end,
+  routing through tools that delegate to the domain AI services above.
+  Separate from, and doesn't touch, Phase 6's Claude-only
+  `AiAssistantService`
+- **`AiDailyDigestScheduler`** — nightly (3 AM, after Phase 6's 2 AM
+  forecast-regeneration job) executive daily-summary per branch plus the
+  embedding-backfill worker, which indexes any memory entries written
+  before `AI_RAG_ENABLED` was turned on
+- 123 new unit/provider-mocking/prompt-validation/confidence-scoring tests
+  (26 suites) alongside Phase 6's 49 and the rest of the existing suite;
+  323 tests total, plus typecheck/lint clean and a full Nest app boot
+  (`app.init()`) verifying every new provider/service resolves in the DI
+  graph
+- Scaffolding only in this part — no `apps/admin` UI yet (Phase 6's
+  "Intelligence" nav section is unchanged), and each of the 8 domains
+  implements its headline methods rather than every bullet a full-featured
+  version might eventually cover
+- **Exit criteria (Part 1):** the intelligence module is scaffolded, the
+  three provider abstractions are defined and swappable via config, the 8
+  AI domains are organized and callable end-to-end against real Prisma
+  data, configuration is documented, and the full existing test suite —
+  Phases 1–6 included — still passes untouched
+
 ## Sequencing notes
 
 - Auth and RBAC came first (Phase 1) because every other phase's endpoints
@@ -405,3 +487,10 @@ breaking migration once real orders/customers exist.
   originally planned there) and Phase 8's aggregation-job analytics
   (Phase 6's forecast/RFM logic already needed the same on-demand-query
   read paths Phase 8 would otherwise introduce materialized views for).
+- Phase 11 (Restaurant Intelligence Platform) is numbered after Phase 10
+  but was built immediately after Phase 6, for the same reason Phase 6
+  jumped ahead of Phase 7-9: it extends Phase 6's intelligence services
+  rather than anything a later phase would add, so there was no
+  dependency reason to wait. It does not complete Phase 7 (multi-supplier
+  price comparison remains open) or Phase 8 (still on-demand queries, no
+  new materialized views) — those stay exactly as scoped above.

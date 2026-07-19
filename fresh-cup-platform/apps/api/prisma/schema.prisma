@@ -10,7 +10,10 @@
 // departments/shifts/attendance, staff permissions, restaurant settings,
 // banners, gift cards, referrals, campaigns, reviews, API keys. Phase 6: AI
 // & business intelligence — model registry + forecast snapshots for sales/
-// demand forecasting, AI assistant query log. See
+// demand forecasting, AI assistant query log. Phase 7: Restaurant
+// Intelligence Platform — long-term AI memory (conversations/decisions/
+// recommendations/accepted-or-rejected suggestions) and a provider-agnostic
+// vector index backing RAG retrieval (see apps/api/src/intelligence/). See
 // fresh-cup-platform/docs/DATABASE_SCHEMA.md and docs/ROADMAP.md.
 //
 // IDs use Prisma's default (client-generated UUIDv4) rather than a
@@ -272,6 +275,7 @@ model Branch {
   attendances       Attendance[]
   banners           Banner[]
   forecastSnapshots ForecastSnapshot[]
+  aiMemoryEntries   AiMemoryEntry[]
 
   @@index([managerId])
   @@map("branches")
@@ -336,6 +340,8 @@ model User {
   campaignsCreated         Campaign[]
   apiKeysCreated           ApiKey[]
   aiAssistantQueries       AiAssistantQuery[]
+  aiMemoriesAbout          AiMemoryEntry[]   @relation("AiMemorySubject")
+  aiMemoriesAuthored       AiMemoryEntry[]   @relation("AiMemoryAuthor")
 
   @@index([branchId])
   @@index([departmentId])
@@ -1472,4 +1478,66 @@ model AiAssistantQuery {
 
   @@index([askedByUserId, createdAt])
   @@map("ai_assistant_queries")
+}
+
+// ---------------------------------------------------------------------------
+// AI Memory & Vector Index (Phase 7)
+// ---------------------------------------------------------------------------
+
+enum AiMemoryKind {
+  CONVERSATION
+  DECISION
+  RECOMMENDATION
+  ACCEPTED_SUGGESTION
+  REJECTED_SUGGESTION
+  EXPLANATION
+}
+
+/// Long-term memory for the Restaurant Intelligence Platform (Phase 7) —
+/// one row per remembered conversation turn, business decision, AI
+/// recommendation, or accept/reject outcome, scoped by `domain` (e.g.
+/// "executive", "sales-ai") so each domain service can recall only its own
+/// history. Embeddings live in `VectorEntry` (namespace "ai-memory", keyed
+/// by this row's id) rather than on this table, so the RAG store stays
+/// swappable to an external VectorProvider without an AiMemoryEntry schema
+/// change — see EmbeddingBackfillWorker for indexing entries written
+/// before AI_RAG_ENABLED was turned on.
+model AiMemoryEntry {
+  id            String       @id @default(uuid())
+  kind          AiMemoryKind
+  domain        String
+  title         String
+  content       String
+  metadata      Json?
+  branchId      String?      @map("branch_id")
+  branch        Branch?      @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  subjectUserId String?      @map("subject_user_id")
+  subjectUser   User?        @relation("AiMemorySubject", fields: [subjectUserId], references: [id], onDelete: SetNull)
+  authorUserId  String?      @map("author_user_id")
+  authorUser    User?        @relation("AiMemoryAuthor", fields: [authorUserId], references: [id], onDelete: SetNull)
+  createdAt     DateTime     @default(now()) @map("created_at")
+
+  @@index([domain, kind, createdAt])
+  @@index([branchId, createdAt])
+  @@map("ai_memory_entries")
+}
+
+/// Provider-agnostic vector store used by the default (zero-external-
+/// dependency) `PgVectorProvider` — application code computes cosine
+/// similarity over `embedding` rather than requiring the Postgres
+/// `pgvector` extension. Only used when VECTOR_PROVIDER=pgvector (the
+/// default); OpenSearch/Pinecone/Qdrant providers keep their own storage
+/// remotely and never touch this table. `namespace` partitions unrelated
+/// indexes (e.g. "ai-memory", "menu-catalog") within the one table.
+model VectorEntry {
+  id        String   @id @default(uuid())
+  namespace String
+  content   String?
+  metadata  Json?
+  embedding Float[]
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([namespace])
+  @@map("vector_entries")
 }

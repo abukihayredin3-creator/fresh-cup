@@ -536,7 +536,7 @@ provider since Phase 2.
 Purely additive — nothing above this section changes shape. Recommendations,
 customer intelligence, inventory intelligence, and marketing intelligence
 are all computed on demand from tables Phases 1-5 already own (same
-on-demand-aggregate approach as section 16's Analytics); only forecasting
+on-demand-aggregate approach as section 17's Analytics); only forecasting
 persists anything, because "forecast vs. actual" requires a prediction to
 outlive the day it was made, and "replaceable/versioned models" requires a
 registry row to version against.
@@ -573,7 +573,40 @@ traceable back to the real data it cites — never a bare LLM claim.
 
 | id, asked_by_user_id FK NULL, question, answer, tool_calls jsonb NULL, outcome (`answered`,`fallback`,`error`), created_at |
 
-## 16. Analytics
+## 16. Restaurant Intelligence Platform (Phase 11)
+
+Purely additive on top of section 15 — nothing above changes shape, and
+Phase 6's three tables stay exactly as they are. `apps/api/src/intelligence`
+(distinct from `modules/intelligence` above) wraps five of section 15's
+services with explanation/confidence framing and adds three new domains
+(kitchen/delivery/workforce) computed on demand from tables Phases 1-5
+already own — no new columns needed for any of the three. Only long-term
+memory and the vector index persist anything new.
+
+### `ai_memory_entries`
+
+Long-term memory: one row per remembered conversation turn, business
+decision, AI recommendation, or accept/reject outcome, scoped by `domain`
+(e.g. `"executive"`, `"sales-ai"`) so each domain service recalls only its
+own history. A no-op write (`AiMemoryService`) when `AI_MEMORY_ENABLED=false`.
+
+| id, kind (`conversation`,`decision`,`recommendation`,`accepted_suggestion`,`rejected_suggestion`,`explanation`), domain, title, content, metadata jsonb NULL, branch_id FK NULL `ON DELETE CASCADE`, subject_user_id FK NULL `ON DELETE SET NULL`, author_user_id FK NULL `ON DELETE SET NULL`, created_at | index (domain, kind, created_at); index (branch_id, created_at) |
+
+### `vector_entries`
+
+Backing store for the default `PgVectorProvider` (`VECTOR_PROVIDER=pgvector`,
+the zero-external-dependency default) — `embedding` is a native Postgres
+`double precision[]` column, and `VectorProvider.query()` computes cosine
+similarity in application code rather than requiring the Postgres
+`pgvector` extension. `namespace` partitions unrelated indexes within the
+one table (currently only `"ai-memory"` is used, keyed by the matching
+`ai_memory_entries.id`). Only touched when `VECTOR_PROVIDER=pgvector`;
+OpenSearch/Pinecone/Qdrant keep their own storage remotely and never read
+or write this table.
+
+| id, namespace, content NULL, metadata jsonb NULL, embedding double precision[], created_at, updated_at | index (namespace) |
+
+## 17. Analytics
 
 Implemented in Phase 3 as on-demand aggregate queries against the live
 `orders`/`order_items` tables — deliberately not materialized views or a
@@ -598,7 +631,7 @@ If order-history volume ever makes these queries too slow, Phase 8
 same "don't build ahead of the need" reasoning as Phase 3's on-demand
 approach in the first place.
 
-## 17. Indexing notes
+## 18. Indexing notes
 
 - `orders(branch_id, status, created_at)` — kitchen queue & admin order list
 - `orders(user_id, created_at)` — customer order history
@@ -615,7 +648,7 @@ approach in the first place.
 - `audit_logs(entity_type, entity_id)`, `audit_logs(actor_user_id, created_at)` — audit-log lookups by entity or by actor (Phase 3)
 - Partition `orders` and `delivery_tracking_pings` by month once volume warrants it (Phase 9)
 
-## 18. Sample DDL sketch (illustrative, not exhaustive)
+## 19. Sample DDL sketch (illustrative, not exhaustive)
 
 ```sql
 create type order_status as enum (

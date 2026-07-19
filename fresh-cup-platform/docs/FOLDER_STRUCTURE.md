@@ -23,6 +23,25 @@ fresh-cup-platform/
 │   │   │   │   ├── intelligence/   # Phase 6 — recommendations, customer/inventory/
 │   │   │   │   │                   #   marketing intelligence, forecasting, executive BI, AI assistant
 │   │   │   │   └── branches/       # branch/location management
+│   │   │   ├── intelligence/       # Phase 11 — Restaurant Intelligence Platform (sibling
+│   │   │   │   │                   #   tree to modules/intelligence above, wraps it rather
+│   │   │   │   │                   #   than replacing it)
+│   │   │   │   ├── controllers/    # one per AI domain + memory + assistant
+│   │   │   │   ├── services/       # executive/sales/customer/inventory/marketing/kitchen/
+│   │   │   │   │                   #   delivery/workforce AI, agent-runner, explanation, security
+│   │   │   │   ├── llm/            # LlmProvider interface + factory + providers/
+│   │   │   │   ├── embeddings/     # EmbeddingProvider interface + factory + providers/
+│   │   │   │   ├── vector/         # VectorProvider interface + factory + providers/
+│   │   │   │   ├── rag/            # RagService (embed + index + retrieve)
+│   │   │   │   ├── memory/         # AiMemoryService (long-term AI memory)
+│   │   │   │   ├── scheduler/      # nightly daily-digest job
+│   │   │   │   ├── workers/        # embedding backfill
+│   │   │   │   ├── prompts/        # system prompts, prompt sanitizer
+│   │   │   │   ├── tools/          # tool-registry types shared by agent-runner/assistant
+│   │   │   │   ├── guards/         # AiAuthorizationGuard (irreversible-action protection)
+│   │   │   │   ├── interceptors/   # SecretRedactionInterceptor
+│   │   │   │   ├── dto/, entities/, events/, utils/
+│   │   │   │   └── ai-intelligence.module.ts
 │   │   │   ├── common/             # guards, interceptors, pipes, decorators
 │   │   │   ├── websockets/         # /ws/orders, /ws/delivery gateways
 │   │   │   ├── queue/              # BullMQ processors

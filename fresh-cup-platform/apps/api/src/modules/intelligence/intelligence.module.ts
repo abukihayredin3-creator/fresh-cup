@@ -50,5 +50,16 @@ import { RecommendationsService } from "./recommendations/recommendations.servic
     ExecutiveService,
     AiAssistantService,
   ],
+  // Phase 7's apps/api/src/intelligence/ (AiIntelligenceModule) wraps these
+  // same services with explanation/confidence/memory framing rather than
+  // recomputing any of them — same reasoning as AnalyticsModule's exports.
+  exports: [
+    RecommendationsService,
+    CustomerIntelligenceService,
+    ForecastingService,
+    InventoryIntelligenceService,
+    MarketingIntelligenceService,
+    ExecutiveService,
+  ],
 })
 export class IntelligenceModule {}
