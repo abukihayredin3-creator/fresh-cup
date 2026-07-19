@@ -1,6 +1,7 @@
 import { ApiClient, type ApiClientOptions } from "./client";
 import { AddressesResource } from "./resources/addresses";
 import { AdminAnalyticsResource } from "./resources/admin/analytics";
+import { AdminAuditResource } from "./resources/admin/audit";
 import { AdminBranchesResource } from "./resources/admin/branches";
 import { AdminDeliveryResource } from "./resources/admin/delivery";
 import { AdminEmployeesResource } from "./resources/admin/employees";
@@ -28,6 +29,7 @@ export * from "./client";
 export * from "./query";
 export * from "./resources/addresses";
 export * from "./resources/admin/analytics";
+export * from "./resources/admin/audit";
 export * from "./resources/admin/branches";
 export * from "./resources/admin/delivery";
 export * from "./resources/admin/employees";
@@ -58,6 +60,7 @@ export * from "./resources/users";
  */
 export interface FreshCupAdminApiClient {
   settings: AdminSettingsResource;
+  audit: AdminAuditResource;
   branches: AdminBranchesResource;
   users: AdminUsersResource;
   employees: AdminEmployeesResource;
@@ -107,6 +110,7 @@ export function createFreshCupClient(options: ApiClientOptions): FreshCupApiClie
     security: new SecurityResource(raw),
     admin: {
       settings: new AdminSettingsResource(raw),
+      audit: new AdminAuditResource(raw),
       branches: new AdminBranchesResource(raw),
       users: new AdminUsersResource(raw),
       employees: new AdminEmployeesResource(raw),
