@@ -1,18 +1,24 @@
-import type { HTMLAttributes, ReactNode } from "react";
+import { forwardRef, type HTMLAttributes, type ReactNode } from "react";
+import { cn } from "../cn";
 
 export interface CardProps extends HTMLAttributes<HTMLDivElement> {
   children: ReactNode;
+  /** Renders without padding, for cards that manage their own inner layout (e.g. ProductCard). */
+  padded?: boolean;
 }
 
-/** Base surface: warm-white background, neutral border, no drop shadow by default. */
-export function Card({ className, children, ...props }: CardProps) {
-  const classes = ["rounded-lg border border-neutral-200 bg-warm-white p-6", className]
-    .filter(Boolean)
-    .join(" ");
-
+/** Base surface: theme-aware background, neutral border, no drop shadow by default. */
+export const Card = forwardRef<HTMLDivElement, CardProps>(function Card(
+  { className, children, padded = true, ...props },
+  ref,
+) {
   return (
-    <div className={classes} {...props}>
+    <div
+      ref={ref}
+      className={cn("rounded-lg border border-border bg-surface-alt", padded && "p-6", className)}
+      {...props}
+    >
       {children}
     </div>
   );
-}
+});

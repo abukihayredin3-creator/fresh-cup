@@ -2,14 +2,51 @@
 @import "@fresh-cup/config/tailwind/theme.css";
 
 @theme inline {
-  --color-background: var(--color-warm-white);
-  --color-foreground: var(--color-neutral-900);
   --font-sans: var(--font-inter);
   --font-display: var(--font-fraunces);
+  --font-ethiopic: var(--font-noto-ethiopic);
+}
+
+html {
+  color-scheme: light;
+}
+
+html[data-theme="dark"] {
+  color-scheme: dark;
 }
 
 body {
-  background: var(--color-background);
-  color: var(--color-foreground);
+  background: var(--color-surface);
+  color: var(--color-fg);
   font-family: var(--font-sans);
+}
+
+html[lang="am"] body {
+  font-family: var(--font-ethiopic);
+}
+
+/* Visually hidden but focusable — used by the skip-to-content link. */
+.sr-only-focusable {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.sr-only-focusable:focus {
+  position: fixed;
+  top: 0.5rem;
+  left: 0.5rem;
+  width: auto;
+  height: auto;
+  padding: 0.5rem 1rem;
+  margin: 0;
+  overflow: visible;
+  clip: auto;
+  z-index: 100;
 }

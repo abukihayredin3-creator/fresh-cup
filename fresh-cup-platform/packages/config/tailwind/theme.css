@@ -4,6 +4,16 @@
  * Imported by each Next.js app's globals.css. Mirrored for React Native via
  * NativeWind in apps/mobile using ./preset.js (Tailwind v3-style JS config,
  * since NativeWind's tooling still expects it).
+ *
+ * Dark mode (Phase 4): brand colors (green/orange/error/success) are fixed
+ * identity colors and don't change between themes. Semantic tokens (surface/
+ * fg/border, plus the light "tint" backgrounds) are CSS custom properties
+ * re-assigned under `[data-theme="dark"]` below — Tailwind v4 compiles
+ * `@theme` color entries into `var(--color-*)`-backed utilities, so
+ * reassigning the custom property is enough for `bg-surface`, `text-fg`,
+ * etc. to repaint without a second utility class. The `dark:` variant is
+ * still available (mapped to the same attribute) for one-off overrides that
+ * don't fit a semantic token.
  */
 @theme {
   --color-green-900: #1b4332;
@@ -22,6 +32,16 @@
   --color-error-600: #c0392b;
   --color-success-600: #2d6a4f;
 
+  /* Semantic, theme-aware tokens — see the dark-mode block below. */
+  --color-surface: #fbf6ef;
+  --color-surface-alt: #ffffff;
+  --color-fg: #1f2420;
+  --color-fg-muted: #6b7268;
+  --color-border: #e7e4dd;
+  --color-tint-green: #e4f0e9;
+  --color-tint-orange: #fde9dc;
+  --color-overlay: rgb(31 36 32 / 45%);
+
   --font-display: "Fraunces", serif;
   --font-sans: "Inter", sans-serif;
   --font-ethiopic: "Noto Sans Ethiopic", sans-serif;
@@ -38,4 +58,17 @@
   --radius-DEFAULT: 8px;
   --radius-lg: 16px;
   --radius-pill: 999px;
+}
+
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+:root[data-theme="dark"] {
+  --color-surface: #17140f;
+  --color-surface-alt: #211d19;
+  --color-fg: #f5f1ea;
+  --color-fg-muted: #a8a398;
+  --color-border: #3a342e;
+  --color-tint-green: #1e3328;
+  --color-tint-orange: #3a2416;
+  --color-overlay: rgb(0 0 0 / 60%);
 }
