@@ -142,4 +142,47 @@ export class AiMemoryService {
       { memoryEntryId, domain: original.domain, actorUserId },
     );
   }
+
+  /**
+   * Phase 11 Part 3's "Restaurant Memory" categories — thin, typed wrappers
+   * over `remember()` so callers don't have to remember which
+   * `AiMemoryKind` maps to which real-world event. Each still goes through
+   * the same enabled-flag check, event emission, and RAG indexing as any
+   * other memory write.
+   */
+  rememberCustomerPreference(input: Omit<RememberInput, "kind">): Promise<string | null> {
+    return this.remember({ ...input, kind: AiMemoryKind.CUSTOMER_PREFERENCE });
+  }
+
+  rememberManagerFeedback(input: Omit<RememberInput, "kind">): Promise<string | null> {
+    return this.remember({ ...input, kind: AiMemoryKind.MANAGER_FEEDBACK });
+  }
+
+  rememberCampaignHistory(input: Omit<RememberInput, "kind">): Promise<string | null> {
+    return this.remember({ ...input, kind: AiMemoryKind.CAMPAIGN_HISTORY });
+  }
+
+  rememberSupplierIssue(input: Omit<RememberInput, "kind">): Promise<string | null> {
+    return this.remember({ ...input, kind: AiMemoryKind.SUPPLIER_ISSUE });
+  }
+
+  rememberInventoryFailure(input: Omit<RememberInput, "kind">): Promise<string | null> {
+    return this.remember({ ...input, kind: AiMemoryKind.INVENTORY_FAILURE });
+  }
+
+  rememberHolidayDemand(input: Omit<RememberInput, "kind">): Promise<string | null> {
+    return this.remember({ ...input, kind: AiMemoryKind.HOLIDAY_DEMAND });
+  }
+
+  rememberBranchBehavior(input: Omit<RememberInput, "kind">): Promise<string | null> {
+    return this.remember({ ...input, kind: AiMemoryKind.BRANCH_BEHAVIOR });
+  }
+
+  rememberStaffPerformance(input: Omit<RememberInput, "kind">): Promise<string | null> {
+    return this.remember({ ...input, kind: AiMemoryKind.STAFF_PERFORMANCE });
+  }
+
+  rememberLearningDigest(input: Omit<RememberInput, "kind">): Promise<string | null> {
+    return this.remember({ ...input, kind: AiMemoryKind.LEARNING_DIGEST });
+  }
 }

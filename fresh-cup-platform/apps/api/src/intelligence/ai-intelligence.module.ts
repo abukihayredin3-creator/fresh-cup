@@ -54,6 +54,7 @@ import { LLM_PROVIDER_TOKEN, createLlmProvider } from "./llm/llm-provider.factor
 import { AiMemoryService } from "./memory/ai-memory.service";
 import { CustomerPredictionService } from "./prediction/customer-prediction.service";
 import { RagService } from "./rag/rag.service";
+import { LearningDigestScheduler } from "./scheduler/learning-digest.scheduler";
 import { ModelRegistryV2Service } from "./registry/model-registry-v2.service";
 import { AiDailyDigestScheduler } from "./scheduler/ai-daily-digest.scheduler";
 import { KMeansClusteringStrategy } from "./segmentation/kmeans-clustering.strategy";
@@ -168,6 +169,7 @@ import { EmbeddingBackfillWorker } from "./workers/embedding-backfill.worker";
     AssistantAiService,
     EmbeddingBackfillWorker,
     AiDailyDigestScheduler,
+    LearningDigestScheduler,
     FeatureStoreService,
     ModelRegistryV2Service,
     ConfidenceCalibratorService,

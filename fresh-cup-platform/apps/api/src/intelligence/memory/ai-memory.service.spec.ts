@@ -96,4 +96,24 @@ describe("AiMemoryService", () => {
     expect(rag.retrieve).not.toHaveBeenCalled();
     expect(prisma.aiMemoryEntry.findMany).toHaveBeenCalled();
   });
+
+  describe("Restaurant Memory category wrappers", () => {
+    it.each([
+      ["rememberCustomerPreference", AiMemoryKind.CUSTOMER_PREFERENCE],
+      ["rememberManagerFeedback", AiMemoryKind.MANAGER_FEEDBACK],
+      ["rememberCampaignHistory", AiMemoryKind.CAMPAIGN_HISTORY],
+      ["rememberSupplierIssue", AiMemoryKind.SUPPLIER_ISSUE],
+      ["rememberInventoryFailure", AiMemoryKind.INVENTORY_FAILURE],
+      ["rememberHolidayDemand", AiMemoryKind.HOLIDAY_DEMAND],
+      ["rememberBranchBehavior", AiMemoryKind.BRANCH_BEHAVIOR],
+      ["rememberStaffPerformance", AiMemoryKind.STAFF_PERFORMANCE],
+      ["rememberLearningDigest", AiMemoryKind.LEARNING_DIGEST],
+    ] as const)("%s writes a %s memory entry", async (method, kind) => {
+      const { service, prisma } = makeService(true);
+      await service[method]({ domain: "d", title: "t", content: "c" });
+      expect(prisma.aiMemoryEntry.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ kind }) }),
+      );
+    });
+  });
 });
