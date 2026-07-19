@@ -173,6 +173,13 @@
     "install": "Install",
     "dismiss": "Not now"
   },
+  "notifications": {
+    "title": "Push notifications",
+    "description": "Get notified when your order is confirmed, ready, or out for delivery.",
+    "enable": "Enable notifications",
+    "enabled": "Notifications are on",
+    "unavailable": "Push notifications aren't available on this device."
+  },
   "errors": {
     "network": "Couldn't reach Fresh Cup — check your connection and try again.",
     "unauthorized": "Please log in to continue.",

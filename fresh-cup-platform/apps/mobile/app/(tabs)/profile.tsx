@@ -2,9 +2,11 @@ import { ApiError } from "@fresh-cup/api-client";
 import type { Locale } from "@fresh-cup/types";
 import { localeLabels, locales } from "@fresh-cup/i18n";
 import { useQuery } from "@tanstack/react-query";
+import * as Device from "expo-device";
+import * as Notifications from "expo-notifications";
 import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Button } from "../../src/components/Button";
 import { Card } from "../../src/components/Card";
 import { Input } from "../../src/components/Input";
@@ -12,8 +14,11 @@ import { PriceTag } from "../../src/components/PriceTag";
 import { useI18n } from "../../src/i18n/I18nProvider";
 import { api } from "../../src/lib/api-client";
 import { useAuth } from "../../src/lib/auth-context";
+import { registerForPushNotificationsAsync } from "../../src/lib/push-notifications";
 import { useTheme } from "../../src/theme/ThemeProvider";
 import { brand } from "../../src/theme/tokens";
+
+const PUSH_SUPPORTED = (Platform.OS === "ios" || Platform.OS === "android") && Device.isDevice;
 
 export default function ProfileScreen() {
   const { theme } = useTheme();
@@ -26,6 +31,8 @@ export default function ProfileScreen() {
   const [preferredLocale, setPreferredLocale] = useState<Locale>("en");
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [pushEnabled, setPushEnabled] = useState(false);
+  const [pushRequesting, setPushRequesting] = useState(false);
 
   useEffect(() => {
     // Seeds the editable form from AuthProvider's user, which itself only resolves post-mount
@@ -42,6 +49,20 @@ export default function ProfileScreen() {
     queryFn: () => api.loyalty.me({ limit: 5 }),
     enabled: Boolean(user),
   });
+
+  useEffect(() => {
+    if (!PUSH_SUPPORTED) return;
+    void Notifications.getPermissionsAsync().then((result) => {
+      setPushEnabled(result.status === "granted");
+    });
+  }, []);
+
+  async function handleEnablePush() {
+    setPushRequesting(true);
+    const token = await registerForPushNotificationsAsync();
+    setPushEnabled(Boolean(token));
+    setPushRequesting(false);
+  }
 
   if (!isReady) return null;
 
@@ -146,6 +167,30 @@ export default function ProfileScreen() {
         <Text style={{ color: theme.fg, fontWeight: "600" }}>{t("profile.addresses")}</Text>
       </Pressable>
 
+      <Card style={styles.notificationsCard}>
+        <Text style={[styles.sectionTitle, { color: theme.fg }]}>{t("notifications.title")}</Text>
+        <Text style={{ color: theme.fgMuted, fontSize: 13 }}>{t("notifications.description")}</Text>
+        {PUSH_SUPPORTED ? (
+          pushEnabled ? (
+            <Text style={{ color: theme.successText, fontSize: 13, fontWeight: "600" }}>
+              {t("notifications.enabled")}
+            </Text>
+          ) : (
+            <Button
+              variant="ghost"
+              loading={pushRequesting}
+              onPress={() => void handleEnablePush()}
+            >
+              {t("notifications.enable")}
+            </Button>
+          )
+        ) : (
+          <Text style={{ color: theme.fgMuted, fontSize: 13 }}>
+            {t("notifications.unavailable")}
+          </Text>
+        )}
+      </Card>
+
       <View style={styles.languageSwitcher}>
         <Text style={{ color: theme.fgMuted, fontSize: 13 }}>{t("common.language")}:</Text>
         {locales.map((code) => (
@@ -181,5 +226,6 @@ const styles = StyleSheet.create({
   loyaltyHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   sectionTitle: { fontSize: 16, fontWeight: "700" },
   navRow: { borderWidth: 1, borderRadius: 12, padding: 14 },
+  notificationsCard: { gap: 8, alignItems: "flex-start" },
   languageSwitcher: { flexDirection: "row", alignItems: "center", gap: 12 },
 });

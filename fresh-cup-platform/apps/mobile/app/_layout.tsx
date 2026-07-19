@@ -8,11 +8,13 @@ import { CartProvider } from "../src/lib/cart-context";
 import { FavoritesProvider } from "../src/lib/favorites-context";
 import { QueryProvider } from "../src/lib/query-provider";
 import { DineInTableProvider } from "../src/lib/table-context";
+import { usePushNotifications } from "../src/lib/use-push-notifications";
 import { I18nProvider } from "../src/i18n/I18nProvider";
 import { ThemeProvider, useTheme } from "../src/theme/ThemeProvider";
 
 function Navigation() {
   const { theme, isDark } = useTheme();
+  usePushNotifications();
 
   return (
     <>
