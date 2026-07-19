@@ -10,9 +10,7 @@ export function Footer() {
     <footer className="border-t border-border bg-surface-alt">
       <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-8 sm:flex-row sm:items-center sm:justify-between sm:px-6">
         <div>
-          <p className="font-display text-h5 text-green-900 dark:text-green-700">
-            {common("appName")}
-          </p>
+          <p className="font-display text-h5 text-fg">{common("appName")}</p>
           <p className="mt-1 text-body-sm text-fg-muted">Merkato, Addis Ababa</p>
         </div>
         <nav aria-label={t("menu")} className="flex flex-wrap gap-x-6 gap-y-2">

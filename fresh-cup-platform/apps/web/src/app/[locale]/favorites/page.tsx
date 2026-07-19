@@ -57,7 +57,7 @@ export default function FavoritesPage() {
 
   return (
     <div className="mx-auto w-full max-w-6xl flex-1 px-4 py-8 sm:px-6">
-      <h1 className="mb-6 font-display text-h3 text-green-900 dark:text-green-700">{t("title")}</h1>
+      <h1 className="mb-6 font-display text-h3 text-fg">{t("title")}</h1>
 
       {isLoading ? (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -72,7 +72,7 @@ export default function FavoritesPage() {
           action={
             <Link
               href="/menu"
-              className="inline-flex items-center justify-center rounded bg-orange-600 px-4 py-2 text-body font-medium text-white hover:bg-orange-600/90"
+              className="inline-flex items-center justify-center rounded bg-orange-600 px-4 py-2 text-body font-medium text-neutral-900 hover:bg-orange-600/90"
             >
               {catalogT("allItems")}
             </Link>

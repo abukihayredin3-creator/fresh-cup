@@ -193,7 +193,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ itemId
 
         <div className="flex flex-col gap-4">
           <div>
-            <h1 className="font-display text-h3 text-green-900 dark:text-green-700">{name}</h1>
+            <h1 className="font-display text-h3 text-fg">{name}</h1>
             {description ? <p className="mt-2 text-body text-fg-muted">{description}</p> : null}
           </div>
 
@@ -226,7 +226,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ itemId
                 <legend className="px-1 text-body-sm font-medium text-fg">
                   {localizedText(group.nameEn, group.nameAm, locale)}
                   {group.isRequired ? (
-                    <span className="ml-2 text-caption text-orange-600">
+                    <span className="ml-2 text-caption text-accent-text">
                       {t("modifierRequired", { min: group.minSelect })}
                     </span>
                   ) : (

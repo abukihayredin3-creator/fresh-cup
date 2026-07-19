@@ -42,6 +42,21 @@
   --color-tint-orange: #fde9dc;
   --color-overlay: rgb(31 36 32 / 45%);
 
+  /*
+   * Text-only variants of the brand/status colors above. A color used as a
+   * *background* (buttons, solid badge fills) is paired with a foreground
+   * chosen for contrast against that specific fixed color, so it works at
+   * one value across both themes. The same color used as *text directly on
+   * the page surface* doesn't have that luxury — the surface itself flips
+   * light/dark, and no single fixed shade clears 4.5:1 against both (e.g.
+   * orange-600 is 2.7:1 on the light surface; green-700 is ~1.2:1 on the
+   * dark tint-green). These are theme-aware so status/accent text stays
+   * readable regardless of theme; see the dark-mode block below.
+   */
+  --color-accent-text: #a54716;
+  --color-success-text: #2d6a4f;
+  --color-danger-text: #c0392b;
+
   --font-display: "Fraunces", serif;
   --font-sans: "Inter", sans-serif;
   --font-ethiopic: "Noto Sans Ethiopic", sans-serif;
@@ -71,4 +86,7 @@
   --color-tint-green: #1e3328;
   --color-tint-orange: #3a2416;
   --color-overlay: rgb(0 0 0 / 60%);
+  --color-accent-text: #f2732e;
+  --color-success-text: #52b788;
+  --color-danger-text: #e57373;
 }

@@ -37,7 +37,7 @@ export default function OrdersPage() {
           action={
             <Link
               href="/login?returnTo=%2Forders"
-              className="inline-flex items-center justify-center rounded bg-orange-600 px-4 py-2 text-body font-medium text-white hover:bg-orange-600/90"
+              className="inline-flex items-center justify-center rounded bg-orange-600 px-4 py-2 text-body font-medium text-neutral-900 hover:bg-orange-600/90"
             >
               {nav("login")}
             </Link>
@@ -61,7 +61,7 @@ export default function OrdersPage() {
 
   return (
     <div className="mx-auto w-full max-w-2xl flex-1 px-4 py-8 sm:px-6">
-      <h1 className="mb-6 font-display text-h3 text-green-900 dark:text-green-700">{t("title")}</h1>
+      <h1 className="mb-6 font-display text-h3 text-fg">{t("title")}</h1>
 
       {orders.length === 0 ? (
         <EmptyState
@@ -70,7 +70,7 @@ export default function OrdersPage() {
           action={
             <Link
               href="/menu"
-              className="inline-flex items-center justify-center rounded bg-orange-600 px-4 py-2 text-body font-medium text-white hover:bg-orange-600/90"
+              className="inline-flex items-center justify-center rounded bg-orange-600 px-4 py-2 text-body font-medium text-neutral-900 hover:bg-orange-600/90"
             >
               {nav("menu")}
             </Link>
@@ -100,7 +100,7 @@ export default function OrdersPage() {
                       locale={locale}
                       className="text-body font-medium text-fg"
                     />
-                    <span className="text-body-sm font-medium text-orange-600">
+                    <span className="text-body-sm font-medium text-accent-text">
                       {ACTIVE_ORDER_STATUSES.includes(order.status)
                         ? t("trackOrder")
                         : t("viewOrder")}

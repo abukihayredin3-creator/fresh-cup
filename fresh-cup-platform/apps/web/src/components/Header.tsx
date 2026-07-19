@@ -27,10 +27,7 @@ export function Header() {
   return (
     <header className="sticky top-0 z-40 border-b border-border bg-surface/95 backdrop-blur supports-[backdrop-filter]:bg-surface/80">
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-4 sm:px-6">
-        <Link
-          href="/"
-          className="flex items-center gap-2 font-display text-h5 text-green-900 dark:text-green-700"
-        >
+        <Link href="/" className="flex items-center gap-2 font-display text-h5 text-fg">
           Fresh Cup
         </Link>
 
@@ -43,7 +40,7 @@ export function Header() {
                 href={item.href}
                 aria-current={active ? "page" : undefined}
                 className={`rounded px-3 py-2 text-body-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-600 ${
-                  active ? "text-green-900 dark:text-green-700" : "text-fg-muted hover:text-fg"
+                  active ? "text-fg" : "text-fg-muted hover:text-fg"
                 }`}
               >
                 {t(item.key)}
@@ -63,7 +60,7 @@ export function Header() {
             {itemCount > 0 ? (
               <span
                 aria-hidden="true"
-                className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-pill bg-orange-600 px-1 text-[10px] font-semibold text-white"
+                className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-pill bg-orange-600 px-1 text-[10px] font-semibold text-neutral-900"
               >
                 {itemCount > 99 ? "99+" : itemCount}
               </span>

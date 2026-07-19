@@ -90,7 +90,7 @@ function LoginForm() {
   return (
     <div className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center px-4 py-16 sm:px-6">
       <Card padded className="flex flex-col gap-6">
-        <h1 className="text-center font-display text-h4 text-green-900 dark:text-green-700">
+        <h1 className="text-center font-display text-h4 text-fg">
           {mode === "staff" ? t("staffTitle") : t("title")}
         </h1>
 

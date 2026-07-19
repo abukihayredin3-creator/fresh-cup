@@ -46,6 +46,16 @@ module.exports = tseslint.config(
     },
   },
   {
+    // Static service worker scripts served from public/ run in the browser's
+    // service-worker global scope (self, caches, fetch, ...), not Node — an
+    // app's own config (e.g. eslint-config-next) usually covers this, but
+    // this root fallback config doesn't include those by default.
+    files: ["**/public/sw.js", "**/public/**/service-worker.js"],
+    languageOptions: {
+      globals: globals.serviceworker,
+    },
+  },
+  {
     rules: {
       "@typescript-eslint/no-unused-vars": [
         "warn",

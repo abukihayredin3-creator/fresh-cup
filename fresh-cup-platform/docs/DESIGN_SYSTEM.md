@@ -29,6 +29,31 @@ needs AA-safe text-on-orange, use `neutral-900` text instead of white if
 that combination measures higher contrast — checked in `packages/ui`'s
 token tests, not eyeballed per-component.
 
+### Dark mode (Phase 4) — status/accent text
+
+`green-900`, `green-700`, `orange-600`, and `error-600` are fixed identity
+colors: correct as _background fills_ (paired with a foreground chosen for
+that exact color), wrong as _text sitting directly on the page surface_,
+because the surface itself repaints between themes and no single fixed
+shade clears 4.5:1 against both a light and a dark surface. Concretely:
+`orange-600` is ~2.7:1 on the light surface (fails even in light mode, per
+the accessibility rule above) and `green-700` is ~1.2:1 on the dark
+`tint-green` background.
+
+For text — status messages, "eyebrow" captions, positive/negative deltas —
+use the theme-aware text tokens instead, defined in
+`packages/config/tailwind/theme.css`:
+
+| Token          | Light mode | Dark mode | Use in place of                   |
+| -------------- | ---------- | --------- | --------------------------------- |
+| `accent-text`  | `#A54716`  | `#F2732E` | `orange-600` as text              |
+| `success-text` | `#2D6A4F`  | `#52B788` | `green-700`/`success-600` as text |
+| `danger-text`  | `#C0392B`  | `#E57373` | `error-600` as text               |
+
+Page/section headings should use `fg` (already theme-aware) rather than a
+brand color at all — distinctiveness comes from the `Fraunces` display
+typeface, not from color, so it doesn't need its own token.
+
 ## Typography
 
 | Use                        | Typeface                       | Notes                                                                                                                                                                        |

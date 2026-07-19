@@ -225,7 +225,7 @@ export default function CheckoutPage() {
 
   return (
     <div className="mx-auto w-full max-w-2xl flex-1 px-4 py-8 sm:px-6">
-      <h1 className="mb-6 font-display text-h3 text-green-900 dark:text-green-700">{t("title")}</h1>
+      <h1 className="mb-6 font-display text-h3 text-fg">{t("title")}</h1>
 
       <div className="flex flex-col gap-8">
         <section>
@@ -309,7 +309,7 @@ export default function CheckoutPage() {
                 <button
                   type="button"
                   onClick={() => setAddingAddress(true)}
-                  className="text-left text-body-sm font-medium text-orange-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-600"
+                  className="text-left text-body-sm font-medium text-accent-text hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-600"
                 >
                   {t("addAddress")}
                 </button>
@@ -342,10 +342,10 @@ export default function CheckoutPage() {
             </Button>
           </div>
           {couponResult ? (
-            <p className="mt-2 text-body-sm text-green-700">{t("couponApplied")}</p>
+            <p className="mt-2 text-body-sm text-success-text">{t("couponApplied")}</p>
           ) : null}
           {couponError ? (
-            <p className="mt-2 text-body-sm text-error-600" role="alert">
+            <p className="mt-2 text-body-sm text-danger-text" role="alert">
               {couponError}
             </p>
           ) : null}

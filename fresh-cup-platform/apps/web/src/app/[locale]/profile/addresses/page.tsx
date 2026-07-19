@@ -118,7 +118,7 @@ export default function AddressesPage() {
   return (
     <div className="mx-auto w-full max-w-lg flex-1 px-4 py-8 sm:px-6">
       <div className="mb-6 flex items-center justify-between">
-        <h1 className="font-display text-h3 text-green-900 dark:text-green-700">{t("title")}</h1>
+        <h1 className="font-display text-h3 text-fg">{t("title")}</h1>
         <Button size="sm" onClick={openCreate}>
           {t("addAddress")}
         </Button>

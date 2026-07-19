@@ -14,7 +14,7 @@ const TONE_CLASSES: Record<NonNullable<BadgeProps["tone"]>, string> = {
   neutral: "bg-border text-fg",
   green: "bg-tint-green text-fg",
   orange: "bg-tint-orange text-fg",
-  error: "bg-error-600/15 text-error-600",
+  error: "bg-error-600/15 text-fg",
 };
 
 export function Badge({ tone = "neutral", className, children, ...props }: BadgeProps) {

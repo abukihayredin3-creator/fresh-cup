@@ -1,11 +1,13 @@
 import { ToastProvider } from "@fresh-cup/ui";
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { NextIntlClientProvider, hasLocale } from "next-intl";
 import { getMessages, setRequestLocale } from "next-intl/server";
 import { Fraunces, Inter, Noto_Sans_Ethiopic } from "next/font/google";
 import { notFound } from "next/navigation";
 import { Footer } from "@/components/Footer";
 import { Header } from "@/components/Header";
+import { OfflineBanner } from "@/components/OfflineBanner";
+import { ServiceWorkerRegistrar } from "@/components/ServiceWorkerRegistrar";
 import { SkipLink } from "@/components/SkipLink";
 import { ThemeProvider, themeInitScript } from "@/components/ThemeProvider";
 import { routing } from "@/i18n/routing";
@@ -36,6 +38,20 @@ export const metadata: Metadata = {
   title: "Fresh Cup Juice House",
   description: "Premium fresh juice and healthy food, Merkato, Addis Ababa.",
   manifest: "/manifest.webmanifest",
+  appleWebApp: {
+    capable: true,
+    title: "Fresh Cup",
+    statusBarStyle: "black-translucent",
+  },
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#fbf6ef" },
+    { media: "(prefers-color-scheme: dark)", color: "#17140f" },
+  ],
 };
 
 export function generateStaticParams() {
@@ -75,7 +91,9 @@ export default async function LocaleLayout({
                     <CartProvider>
                       <FavoritesProvider>
                         <ToastProvider>
+                          <ServiceWorkerRegistrar />
                           <SkipLink />
+                          <OfflineBanner />
                           <Header />
                           <main id="main-content" className="flex flex-1 flex-col">
                             {children}

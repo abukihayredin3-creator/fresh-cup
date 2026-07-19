@@ -82,7 +82,7 @@ export default function OrderTrackingPage({ params }: { params: Promise<{ orderI
   return (
     <div className="mx-auto w-full max-w-2xl flex-1 px-4 py-8 sm:px-6">
       <div className="mb-6 flex items-center justify-between">
-        <h1 className="font-display text-h3 text-green-900 dark:text-green-700">
+        <h1 className="font-display text-h3 text-fg">
           {t("orderNumber", { id: order.id.slice(0, 8) })}
         </h1>
         <StatusBadge status={order.status} label={t(`status.${order.status}`)} />

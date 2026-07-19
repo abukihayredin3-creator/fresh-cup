@@ -92,7 +92,7 @@ export default function ProfilePage() {
       <div className="mb-6 flex items-center gap-4">
         <Avatar name={user.fullName} size="lg" />
         <div>
-          <h1 className="font-display text-h3 text-green-900 dark:text-green-700">{t("title")}</h1>
+          <h1 className="font-display text-h3 text-fg">{t("title")}</h1>
           {user.phone ? <p className="text-body-sm text-fg-muted">{user.phone}</p> : null}
         </div>
       </div>
@@ -135,7 +135,7 @@ export default function ProfilePage() {
             <PriceTag
               amount={loyalty.balance}
               locale={uiLocale}
-              className="text-h5 font-medium text-orange-600"
+              className="text-h5 font-medium text-accent-text"
             />
           </div>
           {loyalty.history.length > 0 ? (
@@ -145,7 +145,9 @@ export default function ProfilePage() {
                   <span className="text-fg-muted">
                     {new Date(entry.createdAt).toLocaleDateString()}
                   </span>
-                  <span className={entry.pointsDelta >= 0 ? "text-green-700" : "text-error-600"}>
+                  <span
+                    className={entry.pointsDelta >= 0 ? "text-success-text" : "text-danger-text"}
+                  >
                     {entry.pointsDelta >= 0 ? "+" : ""}
                     {entry.pointsDelta}
                   </span>

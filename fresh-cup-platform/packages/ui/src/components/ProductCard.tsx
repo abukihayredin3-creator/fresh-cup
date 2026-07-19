@@ -116,7 +116,7 @@ export function ProductCard({
             type="button"
             onClick={onAdd}
             disabled={unavailable}
-            className="rounded bg-orange-600 px-3 py-1.5 text-body-sm font-medium text-white transition-colors hover:bg-orange-600/90 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-600 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-alt"
+            className="rounded bg-orange-600 px-3 py-1.5 text-body-sm font-medium text-neutral-900 transition-colors hover:bg-orange-600/90 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-600 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-alt"
           >
             {addLabel}
           </button>

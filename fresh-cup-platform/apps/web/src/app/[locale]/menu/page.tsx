@@ -93,9 +93,7 @@ export default function MenuPage() {
 
   return (
     <div className="mx-auto w-full max-w-6xl flex-1 px-4 py-8 sm:px-6">
-      <h1 className="mb-6 font-display text-h3 text-green-900 dark:text-green-700">
-        {t("allItems")}
-      </h1>
+      <h1 className="mb-6 font-display text-h3 text-fg">{t("allItems")}</h1>
 
       <div className="mb-6 flex flex-col gap-4">
         <Input
