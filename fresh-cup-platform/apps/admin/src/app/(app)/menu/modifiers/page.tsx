@@ -10,8 +10,8 @@ import {
   useCreateModifierGroup,
   useModifierGroup,
   useModifierGroups,
-  useRemoveModifierGroup,
   useRemoveModifierOption,
+  useUpdateModifierGroup,
 } from "@/lib/use-menu";
 
 function money(amount: number): string {
@@ -106,7 +106,7 @@ export default function ModifierGroupsPage() {
   const { data, isLoading } = useModifierGroups(filterBranchId || undefined);
   const { data: branches } = useAdminBranches(true);
   const createGroup = useCreateModifierGroup();
-  const removeGroup = useRemoveModifierGroup();
+  const updateGroup = useUpdateModifierGroup();
   const { show: showToast } = useToast();
 
   const branchById = new Map((branches ?? []).map((b) => [b.id, b.name]));
@@ -133,13 +133,12 @@ export default function ModifierGroupsPage() {
     }
   }
 
-  async function handleRemove(id: string) {
+  async function handleToggleActive(id: string, isActive: boolean) {
     try {
-      await removeGroup.mutateAsync(id);
-      if (selectedGroupId === id) setSelectedGroupId(null);
-      showToast({ title: "Modifier group removed", tone: "success" });
+      await updateGroup.mutateAsync({ id, input: { isActive: !isActive } });
+      showToast({ title: "Modifier group updated", tone: "success" });
     } catch {
-      showToast({ title: "Could not remove modifier group", tone: "error" });
+      showToast({ title: "Could not update modifier group", tone: "error" });
     }
   }
 
@@ -193,16 +192,25 @@ export default function ModifierGroupsPage() {
           },
           { key: "options", header: "Options", render: (row) => row.options.length },
           {
+            key: "status",
+            header: "Status",
+            render: (row) => (
+              <Badge tone={row.isActive ? "green" : "neutral"}>
+                {row.isActive ? "Active" : "Inactive"}
+              </Badge>
+            ),
+          },
+          {
             key: "actions",
             header: "",
             align: "end",
             render: (row) => (
               <button
                 type="button"
-                onClick={() => handleRemove(row.id)}
-                className="text-caption text-danger-text underline-offset-2 hover:underline"
+                onClick={() => handleToggleActive(row.id, row.isActive)}
+                className="text-caption text-fg-muted underline-offset-2 hover:underline"
               >
-                Remove
+                {row.isActive ? "Deactivate" : "Activate"}
               </button>
             ),
           },

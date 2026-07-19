@@ -183,11 +183,12 @@ export function useCreateModifierGroup() {
   });
 }
 
-export function useUpdateModifierGroup(id: string) {
+export function useUpdateModifierGroup() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (input: UpdateModifierGroupInput) => api.admin.menu.updateModifierGroup(id, input),
-    onSuccess: () => {
+    mutationFn: ({ id, input }: { id: string; input: UpdateModifierGroupInput }) =>
+      api.admin.menu.updateModifierGroup(id, input),
+    onSuccess: (_data, { id }) => {
       void queryClient.invalidateQueries({ queryKey: ["admin-modifier-group", id] });
       void queryClient.invalidateQueries({ queryKey: ["admin-modifier-groups"] });
     },

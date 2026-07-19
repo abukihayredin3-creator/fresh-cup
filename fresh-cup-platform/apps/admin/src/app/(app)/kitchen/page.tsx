@@ -1,23 +1,26 @@
 "use client";
 
 import { Badge, Button, DataTable, Dialog, Input, Select, useToast } from "@fresh-cup/ui";
-import Link from "next/link";
 import { useState, type FormEvent } from "react";
 import { useAdminBranches } from "@/lib/use-dashboard";
-import { useCreateCategory, useMenuCategories, useUpdateCategory } from "@/lib/use-menu";
+import {
+  useCreateKitchenStation,
+  useKitchenStations,
+  useUpdateKitchenStation,
+} from "@/lib/use-kitchen";
 
-export default function CategoriesPage() {
+export default function KitchenPage() {
   const [filterBranchId, setFilterBranchId] = useState("");
-  const { data, isLoading } = useMenuCategories(filterBranchId || undefined);
   const { data: branches } = useAdminBranches(true);
-  const createCategory = useCreateCategory();
-  const updateCategory = useUpdateCategory();
+  const { data, isLoading } = useKitchenStations({ branchId: filterBranchId || undefined });
+  const createStation = useCreateKitchenStation();
+  const updateStation = useUpdateKitchenStation();
   const { show: showToast } = useToast();
 
   const branchById = new Map((branches ?? []).map((b) => [b.id, b.name]));
 
   const [open, setOpen] = useState(false);
-  const [nameEn, setNameEn] = useState("");
+  const [name, setName] = useState("");
   const [branchId, setBranchId] = useState("");
   const [error, setError] = useState<string | null>(null);
 
@@ -25,35 +28,30 @@ export default function CategoriesPage() {
     event.preventDefault();
     setError(null);
     try {
-      await createCategory.mutateAsync({ nameEn, branchId });
-      showToast({ title: "Category created", tone: "success" });
+      await createStation.mutateAsync({ name, branchId });
+      showToast({ title: "Kitchen station created", tone: "success" });
       setOpen(false);
-      setNameEn("");
+      setName("");
       setBranchId("");
     } catch {
-      setError("Could not create the category. Check the details and try again.");
+      setError("Could not create the kitchen station. Check the details and try again.");
     }
   }
 
   async function handleToggleActive(id: string, isActive: boolean) {
     try {
-      await updateCategory.mutateAsync({ id, input: { isActive: !isActive } });
-      showToast({ title: "Category updated", tone: "success" });
+      await updateStation.mutateAsync({ id, input: { isActive: !isActive } });
+      showToast({ title: "Kitchen station updated", tone: "success" });
     } catch {
-      showToast({ title: "Could not update category", tone: "error" });
+      showToast({ title: "Could not update kitchen station", tone: "error" });
     }
   }
 
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
-        <h1 className="font-display text-h3 text-fg">Menu Categories</h1>
-        <div className="flex items-center gap-3">
-          <Link href="/menu" className="text-body-sm text-accent-text hover:underline">
-            Back to menu
-          </Link>
-          <Button onClick={() => setOpen(true)}>New Category</Button>
-        </div>
+        <h1 className="font-display text-h3 text-fg">Kitchen Stations</h1>
+        <Button onClick={() => setOpen(true)}>New Station</Button>
       </div>
 
       <Select
@@ -67,13 +65,13 @@ export default function CategoriesPage() {
       />
 
       <DataTable
-        caption="Categories"
+        caption="Kitchen stations"
         loading={isLoading}
         rows={data?.items ?? []}
         rowKey={(row) => row.id}
-        emptyTitle="No categories yet"
+        emptyTitle="No kitchen stations yet"
         columns={[
-          { key: "name", header: "Name", render: (row) => row.nameEn },
+          { key: "name", header: "Name", render: (row) => row.name },
           { key: "branch", header: "Branch", render: (row) => branchById.get(row.branchId) ?? "—" },
           {
             key: "status",
@@ -107,7 +105,7 @@ export default function CategoriesPage() {
           setOpen(false);
           setError(null);
         }}
-        title="New category"
+        title="New kitchen station"
       >
         <form onSubmit={handleCreate} className="flex flex-col gap-4">
           {error ? (
@@ -118,7 +116,7 @@ export default function CategoriesPage() {
               {error}
             </p>
           ) : null}
-          <Input label="Name" value={nameEn} onChange={(e) => setNameEn(e.target.value)} required />
+          <Input label="Name" value={name} onChange={(e) => setName(e.target.value)} required />
           <Select
             label="Branch"
             placeholder="Select a branch"
@@ -128,10 +126,10 @@ export default function CategoriesPage() {
           />
           <Button
             type="submit"
-            loading={createCategory.isPending}
-            disabled={!nameEn.trim() || !branchId}
+            loading={createStation.isPending}
+            disabled={!name.trim() || !branchId}
           >
-            Create category
+            Create station
           </Button>
         </form>
       </Dialog>
