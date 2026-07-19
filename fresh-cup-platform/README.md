@@ -8,17 +8,21 @@ admin dashboard, customer portal, delivery dashboard, loyalty system, QR
 menu, inventory management, and analytics — built as one coherent system
 rather than disconnected projects.
 
-> **Status:** Phase 4 complete — `apps/api` implements auth/RBAC, catalog,
+> **Status:** Phase 5 complete — `apps/api` implements auth/RBAC, catalog,
 > inventory (Phase 1), the full ordering engine — cart, checkout, payments,
 > coupons, loyalty, real-time order updates (Phase 2) — the restaurant
 > operations platform — kitchen display, delivery/driver management,
 > inventory automation, purchasing, audit logging, and an admin
-> dashboard/analytics (Phase 3) — and the customer experience platform:
+> dashboard/analytics (Phase 3) — the customer experience platform:
 > `apps/web` (full site, i18n, dark mode, PWA) and `apps/mobile` (Expo/React
-> Native) both consume those APIs end to end, with e2e/component test
-> coverage. `apps/admin` and `apps/delivery` are still scaffolds — their
-> frontends are Phase 6/Phase 3-driver-PWA work, not yet built. See
-> [`docs/ROADMAP.md`](docs/ROADMAP.md).
+> Native), both consuming those APIs end to end with e2e/component test
+> coverage (Phase 4) — and the Admin Platform (Phase 5): new
+> employees/marketing/security backend modules plus `apps/admin`, now a
+> complete staff/owner dashboard (dashboard, analytics, branches,
+> employees, menu CMS, inventory/purchasing, kitchen/delivery, marketing,
+> customers, reports/audit log, settings/security), no longer a scaffold.
+> `apps/delivery` remains a scaffold — its driver-facing PWA is the one
+> frontend not yet built. See [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
 ## Start here
 
@@ -30,11 +34,11 @@ rather than disconnected projects.
 | [`docs/FOLDER_STRUCTURE.md`](docs/FOLDER_STRUCTURE.md) | Monorepo layout for every app and shared package                                                                         |
 | [`docs/DESIGN_SYSTEM.md`](docs/DESIGN_SYSTEM.md)       | Brand identity, color system, typography, component tokens                                                               |
 | [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)             | Infrastructure, environments, CI/CD pipeline                                                                             |
-| [`docs/ROADMAP.md`](docs/ROADMAP.md)                   | Phased implementation plan, phase 0 → phase 8                                                                            |
+| [`docs/ROADMAP.md`](docs/ROADMAP.md)                   | Phased implementation plan, phase 0 → phase 9                                                                            |
 
 ## What's here
 
-- **`apps/api`** — NestJS backend implementing Phases 1–3 (see
+- **`apps/api`** — NestJS backend implementing Phases 1–3 and 5 (see
   [`apps/api/README.md`](apps/api/README.md) for the endpoint summary, or
   [`docs/API_DESIGN.md`](docs/API_DESIGN.md) for the full catalog). Health
   checks at `/health` (liveness) and `/health/ready` (Postgres + Redis
@@ -43,16 +47,30 @@ rather than disconnected projects.
   order tracking/account area, i18n (English/Amharic), dark mode, PWA
   (installable + offline caching), WCAG 2 AA (port 3000). See
   [`apps/web/e2e`](apps/web/e2e) for the Playwright suite.
-- **`apps/admin`** — Next.js staff/owner dashboard (port 3001, scaffold only).
+- **`apps/admin`** — Next.js staff/owner dashboard (port 3001), English-only
+  by deliberate scope decision (unlike `apps/web`'s i18n). Staff
+  email/password auth with role-gated navigation; dashboard, analytics
+  (sales/products/customers/kitchen/delivery, CSV export), branches
+  (including hours), employees (departments/shifts/attendance/performance/
+  permissions), menu CMS, inventory + purchasing, kitchen stations,
+  delivery (dashboard/drivers/zones), marketing (banners/gift cards/
+  referrals/campaigns), customers, reports (quick links + an admin-only
+  audit-log viewer), and settings/security (sessions, 2FA, API keys).
 - **`apps/delivery`** — Next.js driver dashboard, installable as a PWA (port 3002, scaffold only).
 - **`apps/mobile`** — Expo (React Native, SDK 57) app for Android + iOS,
   using expo-router: the same customer journeys as `apps/web`, natively —
   theming, i18n, menu/cart/checkout/order-tracking/profile, push
   notifications. Jest + React Native Testing Library component tests.
-- **`packages/ui`** — Shared brand components (web) built on the Tailwind preset.
+- **`packages/ui`** — Shared brand components built on the Tailwind preset,
+  consumed by `apps/web` and `apps/admin` (customer-facing + staff-facing
+  primitives share one design system; `apps/admin`-specific additions
+  include `DataTable`, `Select`, `DateRangePicker`, `StatCard`, `Sidebar`,
+  and a `recharts`-based chart wrapper).
 - **`packages/types`**, **`packages/utils`**, **`packages/api-client`** — Shared
-  TypeScript types, helpers, and API client consumed by `apps/web` and
-  `apps/mobile`.
+  TypeScript types, helpers, and API client consumed by `apps/web`,
+  `apps/admin`, and `apps/mobile`. `packages/api-client` splits into a
+  customer-facing surface and an `admin.*` namespace (12 resources) so
+  neither app's client leaks the other's concerns.
 - **`packages/config`** — Shared TypeScript/ESLint/Tailwind configuration every
   app and package extends from.
 - **`infra/docker`** — `docker-compose.yml` for local Postgres/Redis/MinIO, plus

@@ -72,16 +72,16 @@ erDiagram
 
 Restaurant locations. One row today (Merkato).
 
-| Column                 | Type        | Notes                                                   |
-| ---------------------- | ----------- | ------------------------------------------------------- |
-| id                     | uuid PK     |                                                         |
-| name                   | text        | e.g. "Fresh Cup — Merkato"                              |
-| address_text           | text        | free-text, Addis Ababa addressing                       |
-| lat, lng               | numeric     | for delivery-zone geometry & maps                       |
-| phone                  | text        |                                                         |
-| is_active              | boolean     |                                                         |
-| opens_at, closes_at    | time        | per-day hours modeled in `branch_hours` if needed later |
-| created_at, updated_at | timestamptz |                                                         |
+| Column                 | Type        | Notes                                                                               |
+| ---------------------- | ----------- | ----------------------------------------------------------------------------------- |
+| id                     | uuid PK     |                                                                                     |
+| name                   | text        | e.g. "Fresh Cup — Merkato"                                                          |
+| address_text           | text        | free-text, Addis Ababa addressing                                                   |
+| lat, lng               | numeric     | for delivery-zone geometry & maps                                                   |
+| phone                  | text        |                                                                                     |
+| is_active              | boolean     |                                                                                     |
+| opens_at, closes_at    | time        | flat fallback pair; real per-day scheduling is `branch_hours` (Phase 5, section 14) |
+| created_at, updated_at | timestamptz |                                                                                     |
 
 ### `users`
 
@@ -108,7 +108,7 @@ speculatively — Phase 3's kitchen/delivery features run on
 | is_active              | boolean            |                                                    |
 | created_at, updated_at | timestamptz        |                                                    |
 
-`loyalty_tier` is deferred to Phase 4 (Loyalty & promotions) rather than
+`loyalty_tier` is deferred to Phase 6 (Loyalty rewards & promotions campaigns) rather than
 carried as an unused column until that ledger exists.
 
 ### `otp_codes`
@@ -338,12 +338,12 @@ cached per row so history never needs a recompute. Tied to a payment
 reaching `succeeded` (via the `order.paid` event), not to order placement
 or confirmation, so a cancelled/no-show order never earns points. Reasons
 are currently just `order_earned` and `manual_adjustment`; `redeemed`,
-`bonus`, and `expired` are added in Phase 4 alongside the redemption flow
+`bonus`, and `expired` are added in Phase 6 alongside the redemption flow
 itself.
 
 | id, user_id FK, order_id FK NULL, points_delta, reason (`order_earned`,`manual_adjustment`), balance_after, created_at |
 
-### `rewards_catalog` (Phase 4 — not yet implemented)
+### `rewards_catalog` (Phase 6 — not yet implemented)
 
 | id, name_en, name_am, points_cost, reward_type (`free_item`,`discount_percent`,`discount_amount`), menu_item_id FK NULL, is_active |
 
@@ -425,9 +425,13 @@ differ from `quantity_ordered` for a partial receive.
 
 ## 13. Reviews & audit
 
-### `reviews` (not yet implemented)
+### `product_reviews`
 
-| id, user_id FK, order_id FK, rating (1-5), comment, created_at |
+Implemented in Phase 5. One review per (menu item, user) — `@@unique` on
+that pair, so a customer edits their existing review rather than stacking
+duplicates; enforced at the database level, not just in application code.
+
+| id, menu_item_id FK `ON DELETE CASCADE`, user_id FK `ON DELETE CASCADE`, order_id FK NULL, rating (1-5), comment NULL, created_at, updated_at |
 
 ### `audit_logs`
 
@@ -440,7 +444,84 @@ every mutation; there is no `before` column.
 
 | id, actor_user_id FK NULL `ON DELETE SET NULL`, action (`"METHOD path"`, e.g. `"POST /api/v1/admin/drivers"`), entity_type, entity_id NULL, after jsonb NULL, created_at |
 
-## 14. Analytics
+## 14. Admin Platform (Phase 5)
+
+Everything below is new in Phase 5 — branch hours, employee scheduling/
+permissions, marketing, and account security. `branches.opens_at`/
+`closes_at` (section 2) predates this: `branch_hours` supersedes it with a
+real per-day schedule rather than one flat open/close pair.
+
+### `branch_hours`
+
+One row per (branch, day-of-week); `opens_at`/`closes_at` are NULL and
+`is_closed: true` for a day the branch doesn't open at all.
+
+| id, branch_id FK `ON DELETE CASCADE`, day_of_week (0-6), opens_at NULL, closes_at NULL, is_closed, created_at, updated_at — unique (branch_id, day_of_week) |
+
+### `departments`, `shifts`, `attendances`, `performance_notes`, `staff_permissions`
+
+Employee management. `departments` and `shifts` are `admin`-only to write
+(a `manager` can read); `attendances` is a self-service clock-in/clock-out
+(one open row — `clock_out_at IS NULL` — per user at a time, enforced at
+the service layer, not the DB); `performance_notes` are freeform,
+optionally rated 1-5; `staff_permissions` grants one `PermissionKey` at a
+time to a specific user, additive on top of their fixed `role` — see the
+enum's own reasoning: some staff need exactly one `admin`-gated capability
+(e.g. `MENU_EDIT`) without a full role change.
+
+| Table               | Columns                                                                                                                                                         |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `departments`       | id, branch_id FK NULL `ON DELETE SET NULL`, name, created_at, updated_at                                                                                        |
+| `shifts`            | id, user_id FK `ON DELETE CASCADE`, branch_id FK, starts_at, ends_at, status (`scheduled`,`completed`,`missed`,`cancelled`), notes NULL, created_at, updated_at |
+| `attendances`       | id, user_id FK `ON DELETE CASCADE`, branch_id FK, clock_in_at, clock_out_at NULL, notes NULL, created_at                                                        |
+| `performance_notes` | id, user_id FK `ON DELETE CASCADE` (subject), author_user_id FK NULL (may be null if the author account is later deleted), rating (1-5) NULL, note, created_at  |
+| `staff_permissions` | id, user_id FK `ON DELETE CASCADE`, permission (`PermissionKey` enum), granted_by_user_id FK NULL, created_at — unique (user_id, permission)                    |
+
+### `banners`, `gift_cards`, `gift_card_transactions`, `referral_codes`, `referral_redemptions`, `campaigns`
+
+Marketing. `gift_card_transactions` is an append-only ledger — same
+pattern as `inventory_transactions`/`loyalty_ledger` — with
+`gift_cards.current_balance` a cached projection the service layer keeps
+in sync. `referral_redemptions.referred_user_id` and `.order_id` are both
+unique: a customer can only ever have been referred once, and a redemption
+attaches to at most one order. `campaigns` sends by reusing the existing
+Phase 2 SMS/email/push provider interfaces per targeted user — there's no
+separate marketing-send pipeline — and `target_segment` selects the
+recipient set at send time rather than storing a materialized list.
+
+| Table                    | Columns                                                                                                                                                                                                                                                                                                 |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `banners`                | id, branch_id FK NULL `ON DELETE SET NULL` (null = all branches), title, image_url, link_url NULL, starts_at NULL, ends_at NULL, is_active, sort_order, created_at, updated_at                                                                                                                          |
+| `gift_cards`             | id, code UNIQUE, initial_balance, current_balance, issued_to_user_id FK NULL, is_active, expires_at NULL, created_at, updated_at                                                                                                                                                                        |
+| `gift_card_transactions` | id, gift_card_id FK, amount (signed), order_id FK NULL, note NULL, created_at                                                                                                                                                                                                                           |
+| `referral_codes`         | id, user_id FK UNIQUE `ON DELETE CASCADE`, code UNIQUE, reward_amount, uses_count, is_active, created_at                                                                                                                                                                                                |
+| `referral_redemptions`   | id, referral_code_id FK, referred_user_id FK UNIQUE, order_id FK NULL UNIQUE, created_at                                                                                                                                                                                                                |
+| `campaigns`              | id, name, channel (`push`,`email`,`sms`), message, target_segment (`all_customers`,`active_customers`,`inactive_customers`,`vip_customers`), status (`draft`,`scheduled`,`sent`,`cancelled`), scheduled_at NULL, sent_at NULL, recipient_count NULL, created_by_user_id FK NULL, created_at, updated_at |
+
+### `product_reviews`
+
+See section 13 — listed there since it's customer-facing (menu-item
+reviews), moderated via the admin endpoints documented in
+`API_DESIGN.md`.
+
+### `api_keys`
+
+Admin-issued API keys. Only `key_hash` (never the raw key) and
+`key_prefix` (for display, e.g. `fcup_a1b2****`) are stored — the raw key
+is returned once, at creation, and is not retrievable again.
+
+| id, name, key_hash UNIQUE, key_prefix, created_by_user_id FK NULL, last_used_at NULL, revoked_at NULL, created_at |
+
+### `restaurant_settings`
+
+Singleton — exactly one row, enforced at the service layer (get-or-create)
+rather than a schema constraint. Deliberately holds no payment/SMS/email
+provider credentials; those stay in environment variables, same as every
+provider since Phase 2.
+
+| id, restaurant_name, default_locale, default_currency, default_tax_percent numeric(5,2), timezone, logo_url NULL, primary_color_hex NULL, support_email NULL, support_phone NULL, email_notifications, sms_notifications, push_notifications, updated_by_user_id FK NULL, created_at, updated_at |
+
+## 15. Analytics
 
 Implemented in Phase 3 as on-demand aggregate queries against the live
 `orders`/`order_items` tables — deliberately not materialized views or a
@@ -459,13 +540,13 @@ orders past the payment gate (any status except `pending_payment`/
 - `GET /admin/customers/{id}` — customer-360: profile, paid order
   count/total spend, last order, loyalty balance
 
-If order-history volume ever makes these queries too slow, Phase 7
+If order-history volume ever makes these queries too slow, Phase 8
 (`ROADMAP.md`) is where materialized aggregate tables like
 `daily_sales_summary`/`item_performance` get added — not before, per the
 same "don't build ahead of the need" reasoning as Phase 3's on-demand
 approach in the first place.
 
-## 15. Indexing notes
+## 16. Indexing notes
 
 - `orders(branch_id, status, created_at)` — kitchen queue & admin order list
 - `orders(user_id, created_at)` — customer order history
@@ -480,9 +561,9 @@ approach in the first place.
 - `delivery_tracking_pings(delivery_id, recorded_at)` — live tracking replay (Phase 3)
 - `purchase_orders(branch_id, status)` — purchase-order list/dashboard (Phase 3)
 - `audit_logs(entity_type, entity_id)`, `audit_logs(actor_user_id, created_at)` — audit-log lookups by entity or by actor (Phase 3)
-- Partition `orders` and `delivery_tracking_pings` by month once volume warrants it (Phase 8)
+- Partition `orders` and `delivery_tracking_pings` by month once volume warrants it (Phase 9)
 
-## 16. Sample DDL sketch (illustrative, not exhaustive)
+## 17. Sample DDL sketch (illustrative, not exhaustive)
 
 ```sql
 create type order_status as enum (

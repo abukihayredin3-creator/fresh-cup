@@ -55,14 +55,19 @@ Implemented in Phase 1.
 
 ## Branches
 
-Implemented in Phase 1 — minimal, since multi-branch activation is Phase 8.
+Implemented in Phase 1 — minimal, since multi-branch activation is Phase 9.
+Phase 5 added the admin listing and weekly-hours endpoints below for
+`apps/admin`'s branch management UI.
 
-| Method | Path             | Notes                        |
-| ------ | ---------------- | ---------------------------- |
-| GET    | `/branches`      | public, active branches only |
-| GET    | `/branches/{id}` | public                       |
-| POST   | `/branches`      | `admin` only                 |
-| PATCH  | `/branches/{id}` | `admin` only                 |
+| Method | Path                   | Notes                                                                             |
+| ------ | ---------------------- | --------------------------------------------------------------------------------- |
+| GET    | `/branches`            | public, active branches only                                                      |
+| GET    | `/branches/admin/all`  | `manager`/`admin`; includes inactive branches                                     |
+| GET    | `/branches/{id}`       | public                                                                            |
+| GET    | `/branches/{id}/hours` | public; weekly open/close schedule                                                |
+| PATCH  | `/branches/{id}/hours` | `manager`/`admin`; body: `{ days: [{ dayOfWeek, opensAt, closesAt, isClosed }] }` |
+| POST   | `/branches`            | `admin` only                                                                      |
+| PATCH  | `/branches/{id}`       | `admin` only                                                                      |
 
 ## Catalog (public read, staff+ write)
 
@@ -98,16 +103,21 @@ cart/checkout customization contract, not an admin management view.
 ## Inventory
 
 Base ledger implemented in Phase 1; recipe-based auto-deduction and
-low-stock alerting implemented in Phase 3.
+low-stock alerting implemented in Phase 3; the waste report, predicted
+shortages, and per-item transaction history below were added in Phase 5 for
+`apps/admin`'s inventory dashboard.
 
-| Method | Path                           | Notes                                                                                            |
-| ------ | ------------------------------ | ------------------------------------------------------------------------------------------------ |
-| GET    | `/admin/inventory`             | `staff`+, paginated, optional `branchId`                                                         |
-| GET    | `/admin/inventory/low-stock`   | `staff`+; items where `currentStock <= reorderThreshold`, optional `branchId`                    |
-| GET    | `/admin/inventory/{id}`        | `staff`+                                                                                         |
-| POST   | `/admin/inventory`             | `manager`/`admin`                                                                                |
-| PATCH  | `/admin/inventory/{id}`        | `manager`/`admin`; stock itself isn't editable here — only `/adjust` changes it                  |
-| POST   | `/admin/inventory/{id}/adjust` | `staff`+; body: `{ delta, reason, note? }`; writes a ledger row, rejects if it would go negative |
+| Method | Path                                   | Notes                                                                                                            |
+| ------ | -------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| GET    | `/admin/inventory`                     | `staff`+, paginated, optional `branchId`                                                                         |
+| GET    | `/admin/inventory/low-stock`           | `staff`+; items where `currentStock <= reorderThreshold`, optional `branchId`                                    |
+| GET    | `/admin/inventory/waste-report`        | `manager`/`admin`; optional `branchId`/`dateFrom`/`dateTo`; aggregates `WASTE`-reason ledger rows by item + cost |
+| GET    | `/admin/inventory/predicted-shortages` | `manager`/`admin`; optional `branchId`; trailing-consumption-based days-until-stockout per item                  |
+| GET    | `/admin/inventory/{id}`                | `staff`+                                                                                                         |
+| GET    | `/admin/inventory/{id}/history`        | `staff`+, paginated, optional `reason`; the item's transaction ledger, most recent first                         |
+| POST   | `/admin/inventory`                     | `manager`/`admin`                                                                                                |
+| PATCH  | `/admin/inventory/{id}`                | `manager`/`admin`; stock itself isn't editable here — only `/adjust` changes it                                  |
+| POST   | `/admin/inventory/{id}/adjust`         | `staff`+; body: `{ delta, reason, note? }`; writes a ledger row, rejects if it would go negative                 |
 
 ### Recipe ingredients (Phase 3)
 
@@ -262,7 +272,7 @@ redemption limits.
 ## Loyalty
 
 Implemented in Phase 2 as accrual only — tiers, a rewards catalog, and a
-redemption flow are Phase 4.
+redemption flow are Phase 6.
 
 | Method | Path          | Notes                                                                                                                                   |
 | ------ | ------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
@@ -302,26 +312,33 @@ non-terminal state); receiving is what actually restocks inventory — it
 writes a `RESTOCK` ledger transaction per line and increments
 `InventoryItem.currentStock` atomically with closing the order.
 
-| Method           | Path                                  | Notes                                                                                                                                                             |
-| ---------------- | ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| GET              | `/admin/suppliers`                    | `staff`+, paginated, optional `branchId`                                                                                                                          |
-| POST             | `/admin/suppliers`                    | `manager`/`admin`                                                                                                                                                 |
-| GET/PATCH/DELETE | `/admin/suppliers/{id}`               | `staff`+ read, `manager`/`admin` write; DELETE soft-deletes (`isActive: false`)                                                                                   |
-| GET              | `/admin/purchase-orders`              | `staff`+, paginated; optional `branchId`/`status`/`supplierId`; managers branch-scoped                                                                            |
-| POST             | `/admin/purchase-orders`              | `manager`/`admin`; body: `{ branchId, supplierId, notes?, lines: [{ inventoryItemId, quantityOrdered, unitCost }] }`                                              |
-| GET              | `/admin/purchase-orders/{id}`         | `staff`+                                                                                                                                                          |
-| POST             | `/admin/purchase-orders/{id}/submit`  | `manager`/`admin`; `draft` → `submitted`                                                                                                                          |
-| POST             | `/admin/purchase-orders/{id}/receive` | `staff`+; `submitted` → `received`; body: `{ lines? }` — omit to receive every line in full, or override specific lines' `quantityReceived` for a partial receive |
-| POST             | `/admin/purchase-orders/{id}/cancel`  | `manager`/`admin`; only from `draft`/`submitted`                                                                                                                  |
+| Method           | Path                                   | Notes                                                                                                                                                             |
+| ---------------- | -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET              | `/admin/suppliers`                     | `staff`+, paginated, optional `branchId`                                                                                                                          |
+| POST             | `/admin/suppliers`                     | `manager`/`admin`                                                                                                                                                 |
+| GET/PATCH/DELETE | `/admin/suppliers/{id}`                | `staff`+ read, `manager`/`admin` write; DELETE soft-deletes (`isActive: false`)                                                                                   |
+| GET              | `/admin/suppliers/{id}/analytics`      | `staff`+; order counts by outcome, total spend/paid, average lead time, fulfillment rate                                                                          |
+| GET              | `/admin/purchase-orders`               | `staff`+, paginated; optional `branchId`/`status`/`supplierId`; managers branch-scoped                                                                            |
+| POST             | `/admin/purchase-orders`               | `manager`/`admin`; body: `{ branchId, supplierId, notes?, lines: [{ inventoryItemId, quantityOrdered, unitCost }] }`                                              |
+| GET              | `/admin/purchase-orders/{id}`          | `staff`+                                                                                                                                                          |
+| POST             | `/admin/purchase-orders/{id}/submit`   | `manager`/`admin`; `draft` → `submitted`                                                                                                                          |
+| POST             | `/admin/purchase-orders/{id}/receive`  | `staff`+; `submitted` → `received`; body: `{ lines? }` — omit to receive every line in full, or override specific lines' `quantityReceived` for a partial receive |
+| POST             | `/admin/purchase-orders/{id}/cancel`   | `manager`/`admin`; only from `draft`/`submitted`                                                                                                                  |
+| PATCH            | `/admin/purchase-orders/{id}/invoice`  | `manager`/`admin`; body: `{ invoiceNumber?, invoiceUrl? }`                                                                                                        |
+| POST             | `/admin/purchase-orders/{id}/payments` | `manager`/`admin`; body: `{ amount, method, note? }`; a purchase order can have multiple partial payments                                                         |
 
-## Admin dashboard & analytics (Phase 3)
+## Admin dashboard & analytics (Phase 3, extended Phase 5)
 
 `manager`/`admin` only. All on-demand aggregate queries against live order
-data — no materialized views or nightly aggregation jobs (that's Phase 7,
+data — no materialized views or nightly aggregation jobs (that's Phase 8,
 once order-history volume actually makes on-demand queries too slow).
 "Revenue" throughout means orders past the payment gate (any status except
 `pending_payment`/`cancelled`), the closest proxy for "paid" without
-joining `Payment`.
+joining `Payment`. Phase 5 added the kitchen/delivery analytics and
+delivery heatmap rows below; the heatmap endpoint has no `apps/admin` UI
+yet (rendering it needs a mapping library this monorepo doesn't otherwise
+depend on) — everything else in this table is consumed by the Analytics
+and Reports sections of `apps/admin`.
 
 | Method | Path                                                    | Notes                                                                                                                                                   |
 | ------ | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -329,12 +346,108 @@ joining `Payment`.
 | GET    | `/admin/analytics/sales?branchId=&from=&to=`            | revenue/order count by day over the range (defaults to the last 30 days)                                                                                |
 | GET    | `/admin/analytics/items?branchId=&from=&to=&limit=`     | top-selling menu items by revenue                                                                                                                       |
 | GET    | `/admin/analytics/customers?branchId=&from=&to=&limit=` | top customers by spend                                                                                                                                  |
+| GET    | `/admin/analytics/kitchen?branchId=&from=&to=`          | prep-time performance by station over the range                                                                                                         |
+| GET    | `/admin/analytics/delivery?branchId=&from=&to=`         | delivery time and zone performance over the range                                                                                                       |
+| GET    | `/admin/analytics/delivery/heatmap?branchId=&from=&to=` | delivered-order coordinates for a heat-map view                                                                                                         |
 | GET    | `/admin/customers/{id}`                                 | customer-360: profile, paid order count/total spend, last order, loyalty balance; a manager gets 403 for a customer who's never ordered at their branch |
 
-Branch/employee/customer _management_ (as opposed to analytics) needed no
-new endpoints — `/admin/branches` (Phase 1), `/admin/users` (Phase 1, also
-serves customer listing/detail via `?role=CUSTOMER`), and `/admin/audit-logs`
-(below) already cover it.
+Branch and customer _management_ (as opposed to analytics) needed no new
+endpoints — `/admin/branches` (Phase 1, extended in Phase 5 with hours) and
+`/admin/users` (Phase 1, also serves customer listing/detail via
+`?role=CUSTOMER`) already cover it. Employee management got a real new
+surface in Phase 5 — see Employees below.
+
+## Employees (Phase 5)
+
+`/admin/users`/`/admin/users/{id}` (Phase 1) already cover the account
+itself (role, branch, `isActive`, and — `admin` only — `isOwner`/`salary`).
+Phase 5 added everything below: departments, shift scheduling, clock-in/out
+attendance, freeform performance notes, and the fine-grained permission
+grants that let a `MANAGER`/`STAFF` account do one specific `admin`-gated
+thing (e.g. `MENU_EDIT`) without a full role change.
+
+| Method       | Path                                             | Notes                                                                                                                                                                                |
+| ------------ | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| GET          | `/admin/departments`                             | `manager`/`admin`, optional `branchId`                                                                                                                                               |
+| POST         | `/admin/departments`                             | `admin` only                                                                                                                                                                         |
+| PATCH/DELETE | `/admin/departments/{id}`                        | `admin` only; DELETE is a hard delete (no `isActive` concept for departments)                                                                                                        |
+| GET          | `/admin/shifts`                                  | `manager`/`admin`, paginated, optional `userId`/`branchId`/`from`/`to`                                                                                                               |
+| POST         | `/admin/shifts`                                  | `admin` only; body: `{ userId, branchId, startsAt, endsAt }`                                                                                                                         |
+| PATCH/DELETE | `/admin/shifts/{id}`                             | `admin` only                                                                                                                                                                         |
+| POST         | `/admin/attendance/clock-in`                     | any staff role; body: `{ branchId }`                                                                                                                                                 |
+| POST         | `/admin/attendance/clock-out`                    | any staff role; closes the caller's open clock-in                                                                                                                                    |
+| GET          | `/admin/attendance`                              | `manager`/`admin`, paginated, optional `userId`/`branchId`/`from`/`to`                                                                                                               |
+| GET          | `/admin/users/{userId}/performance-notes`        | `manager`/`admin`                                                                                                                                                                    |
+| POST         | `/admin/users/{userId}/performance-notes`        | `manager`/`admin`; body: `{ note, rating? }`                                                                                                                                         |
+| GET          | `/admin/users/{userId}/permissions`              | `admin` only                                                                                                                                                                         |
+| POST         | `/admin/users/{userId}/permissions`              | `admin` only; body: `{ permission }`, one of `MENU_EDIT`/`INVENTORY_MANAGE`/`PURCHASING_MANAGE`/`EMPLOYEE_MANAGE`/`MARKETING_MANAGE`/`SETTINGS_MANAGE`/`REPORTS_VIEW`/`FINANCE_VIEW` |
+| DELETE       | `/admin/users/{userId}/permissions/{permission}` | `admin` only                                                                                                                                                                         |
+
+## Marketing (Phase 5)
+
+Banners, gift cards, referral codes, and outbound marketing campaigns —
+all new in Phase 5. Campaigns reuse the Phase 2 SMS/email/push provider
+interfaces (currently the console implementations) rather than a
+dedicated marketing-send pipeline.
+
+| Method   | Path                                     | Notes                                                                                                                                             |
+| -------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET      | `/banners/active`                        | public; active banners for the current branch/date window                                                                                         |
+| GET      | `/admin/banners`                         | `marketing_staff`/`manager`/`admin`, paginated, optional `branchId`                                                                               |
+| POST     | `/admin/banners`                         | `marketing_staff`/`manager`/`admin`; body: `{ title, imageUrl, linkUrl?, branchId?, startsAt?, endsAt?, sortOrder? }`                             |
+| PATCH    | `/admin/banners/{id}`                    | `marketing_staff`/`manager`/`admin`                                                                                                               |
+| DELETE   | `/admin/banners/{id}`                    | `marketing_staff`/`manager`/`admin`; hard delete                                                                                                  |
+| GET/POST | `/admin/gift-cards`                      | `marketing_staff`/`manager`/`admin`; POST body: `{ initialBalance, issuedToUserId?, expiresAt? }`                                                 |
+| POST     | `/admin/gift-cards/{id}/adjust`          | `marketing_staff`/`manager`/`admin`; body: `{ amount, orderId?, note? }` — positive tops up, negative deducts                                     |
+| GET/POST | `/admin/referral-codes`                  | `marketing_staff`/`manager`/`admin`; POST body: `{ userId, rewardAmount }`                                                                        |
+| GET      | `/admin/referral-codes/{id}/redemptions` | `marketing_staff`/`manager`/`admin`                                                                                                               |
+| PATCH    | `/admin/referral-codes/{id}`             | `marketing_staff`/`manager`/`admin`; body: `{ rewardAmount?, isActive? }`                                                                         |
+| GET/POST | `/admin/campaigns`                       | `marketing_staff`/`manager`/`admin`; POST body: `{ name, channel, message, targetSegment?, scheduledAt? }`, `channel` one of `PUSH`/`EMAIL`/`SMS` |
+| PATCH    | `/admin/campaigns/{id}`                  | `marketing_staff`/`manager`/`admin`; only editable while `DRAFT`/`SCHEDULED`                                                                      |
+| POST     | `/admin/campaigns/{id}/send`             | `marketing_staff`/`manager`/`admin`; dispatches to every matching user via the campaign's channel, `DRAFT`/`SCHEDULED` → `SENT`                   |
+| POST     | `/admin/campaigns/{id}/cancel`           | `marketing_staff`/`manager`/`admin`; `DRAFT`/`SCHEDULED` → `CANCELLED`                                                                            |
+
+## Reviews (Phase 5)
+
+Customer-facing product reviews plus admin moderation, new in Phase 5.
+
+| Method | Path                               | Notes                                                                         |
+| ------ | ---------------------------------- | ----------------------------------------------------------------------------- |
+| GET    | `/menu-items/{menuItemId}/reviews` | public, paginated                                                             |
+| POST   | `/menu-items/{menuItemId}/reviews` | `customer` only; body: `{ rating, comment? }`                                 |
+| GET    | `/admin/reviews`                   | `staff`+ (incl. `marketing_staff`), paginated, optional `menuItemId`/`userId` |
+| DELETE | `/admin/reviews/{id}`              | `manager`/`admin`; moderation removal                                         |
+
+## Security (Phase 5)
+
+Session/API-key/2FA management, new in Phase 5. Sessions and 2FA are
+self-service — any authenticated user manages their own; the
+`/admin/security/*` routes are `admin`-only actions on _another_ account or
+on API keys.
+
+| Method   | Path                                                 | Notes                                                                                   |
+| -------- | ---------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| GET      | `/security/sessions`                                 | any authenticated user; their own active refresh-token sessions                         |
+| DELETE   | `/security/sessions/{id}`                            | any authenticated user; ownership-checked                                               |
+| GET      | `/admin/security/users/{userId}/sessions`            | `admin` only                                                                            |
+| POST     | `/admin/security/users/{userId}/sessions/revoke-all` | `admin` only; forces sign-out everywhere for that account                               |
+| GET/POST | `/admin/security/api-keys`                           | `admin` only; POST body: `{ name }` → the raw key, shown once, never retrievable again  |
+| POST     | `/admin/security/api-keys/{id}/revoke`               | `admin` only                                                                            |
+| GET      | `/security/2fa`                                      | any authenticated user; `{ enabled }`                                                   |
+| POST     | `/security/2fa/enroll`                               | any authenticated user; returns a fresh RFC 6238 secret + `otpauthUrl` (not yet active) |
+| POST     | `/security/2fa/verify`                               | body: `{ code }`; confirms the enrolled secret and turns 2FA on                         |
+| POST     | `/security/2fa/disable`                              | body: `{ code }`; requires a currently-valid code, not just being logged in             |
+
+## Settings (Phase 5)
+
+Restaurant-wide configuration — name, locale/currency/tax defaults,
+timezone, branding, support contacts, and notification-channel toggles.
+Singleton: there's exactly one settings row, no `{id}` in the path.
+
+| Method | Path              | Notes                                              |
+| ------ | ----------------- | -------------------------------------------------- |
+| GET    | `/admin/settings` | `manager`/`admin`                                  |
+| PATCH  | `/admin/settings` | `admin` only; partial update, any subset of fields |
 
 ## Audit logs (Phase 3)
 
