@@ -46,6 +46,26 @@ export const NAV_SECTIONS: NavSectionConfig[] = [
     items: [{ href: "/marketing", label: "Marketing", roles: [...MANAGEMENT, "MARKETING_STAFF"] }],
   },
   {
+    label: "Intelligence",
+    items: [
+      { href: "/intelligence", label: "Executive", roles: MANAGEMENT },
+      { href: "/intelligence/forecasting", label: "Forecasting", roles: MANAGEMENT },
+      { href: "/intelligence/customers", label: "Customer AI", roles: MANAGEMENT },
+      {
+        href: "/intelligence/inventory",
+        label: "Inventory AI",
+        roles: [...MANAGEMENT, "INVENTORY_STAFF"],
+      },
+      {
+        href: "/intelligence/marketing",
+        label: "Marketing AI",
+        roles: [...MANAGEMENT, "MARKETING_STAFF"],
+      },
+      { href: "/intelligence/recommendations", label: "Recommendations", roles: MANAGEMENT },
+      { href: "/intelligence/assistant", label: "AI Assistant", roles: MANAGEMENT },
+    ],
+  },
+  {
     label: "Organization",
     items: [
       { href: "/branches", label: "Branches", roles: MANAGEMENT },
