@@ -5,6 +5,7 @@ import { AdminAuditResource } from "./resources/admin/audit";
 import { AdminBranchesResource } from "./resources/admin/branches";
 import { AdminDeliveryResource } from "./resources/admin/delivery";
 import { AdminEmployeesResource } from "./resources/admin/employees";
+import { AdminIntelligenceResource } from "./resources/admin/intelligence";
 import { AdminInventoryResource } from "./resources/admin/inventory";
 import { AdminKitchenResource } from "./resources/admin/kitchen";
 import { AdminMarketingResource } from "./resources/admin/marketing";
@@ -22,6 +23,7 @@ import { LoyaltyResource } from "./resources/loyalty";
 import { NotificationsResource } from "./resources/notifications";
 import { OrdersResource } from "./resources/orders";
 import { PaymentsResource } from "./resources/payments";
+import { RecommendationsResource } from "./resources/recommendations";
 import { TablesResource } from "./resources/tables";
 import { UsersResource } from "./resources/users";
 
@@ -33,6 +35,7 @@ export * from "./resources/admin/audit";
 export * from "./resources/admin/branches";
 export * from "./resources/admin/delivery";
 export * from "./resources/admin/employees";
+export * from "./resources/admin/intelligence";
 export * from "./resources/admin/inventory";
 export * from "./resources/admin/kitchen";
 export * from "./resources/admin/marketing";
@@ -50,6 +53,7 @@ export * from "./resources/loyalty";
 export * from "./resources/notifications";
 export * from "./resources/orders";
 export * from "./resources/payments";
+export * from "./resources/recommendations";
 export * from "./resources/tables";
 export * from "./resources/users";
 
@@ -72,6 +76,7 @@ export interface FreshCupAdminApiClient {
   analytics: AdminAnalyticsResource;
   marketing: AdminMarketingResource;
   reviews: AdminReviewsResource;
+  intelligence: AdminIntelligenceResource;
 }
 
 export interface FreshCupApiClient {
@@ -88,6 +93,7 @@ export interface FreshCupApiClient {
   notifications: NotificationsResource;
   tables: TablesResource;
   security: SecurityResource;
+  recommendations: RecommendationsResource;
   admin: FreshCupAdminApiClient;
 }
 
@@ -108,6 +114,7 @@ export function createFreshCupClient(options: ApiClientOptions): FreshCupApiClie
     notifications: new NotificationsResource(raw),
     tables: new TablesResource(raw),
     security: new SecurityResource(raw),
+    recommendations: new RecommendationsResource(raw),
     admin: {
       settings: new AdminSettingsResource(raw),
       audit: new AdminAuditResource(raw),
@@ -122,6 +129,7 @@ export function createFreshCupClient(options: ApiClientOptions): FreshCupApiClie
       analytics: new AdminAnalyticsResource(raw),
       marketing: new AdminMarketingResource(raw),
       reviews: new AdminReviewsResource(raw),
+      intelligence: new AdminIntelligenceResource(raw),
     },
   };
 }
