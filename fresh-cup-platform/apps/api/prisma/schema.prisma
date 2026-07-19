@@ -260,26 +260,27 @@ model Branch {
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
-  users             User[]
-  menuCategories    MenuCategory[]
-  menuItems         MenuItem[]
-  inventoryItems    InventoryItem[]
-  tables            Table[]
-  modifierGroups    ModifierGroup[]
-  carts             Cart[]
-  orders            Order[]
-  kitchenStations   KitchenStation[]
-  deliveryZones     DeliveryZone[]
-  deliveries        Delivery[]
-  suppliers         Supplier[]
-  purchaseOrders    PurchaseOrder[]
-  hours             BranchHours[]
-  departments       Department[]
-  shifts            Shift[]
-  attendances       Attendance[]
-  banners           Banner[]
-  forecastSnapshots ForecastSnapshot[]
-  aiMemoryEntries   AiMemoryEntry[]
+  users              User[]
+  menuCategories     MenuCategory[]
+  menuItems          MenuItem[]
+  inventoryItems     InventoryItem[]
+  tables             Table[]
+  modifierGroups     ModifierGroup[]
+  carts              Cart[]
+  orders             Order[]
+  kitchenStations    KitchenStation[]
+  deliveryZones      DeliveryZone[]
+  deliveries         Delivery[]
+  suppliers          Supplier[]
+  purchaseOrders     PurchaseOrder[]
+  hours              BranchHours[]
+  departments        Department[]
+  shifts             Shift[]
+  attendances        Attendance[]
+  banners            Banner[]
+  forecastSnapshots  ForecastSnapshot[]
+  aiMemoryEntries    AiMemoryEntry[]
+  aiApprovalRequests AiApprovalRequest[]
 
   @@index([managerId])
   @@map("branches")
@@ -330,13 +331,13 @@ model User {
   deliveriesAsDriver       Delivery[]
   createdPurchaseOrders    PurchaseOrder[]
   auditLogs                AuditLog[]
-  managedBranches          Branch[]               @relation("BranchManager")
+  managedBranches          Branch[]                  @relation("BranchManager")
   shifts                   Shift[]
   attendances              Attendance[]
-  permissionsGranted       StaffPermission[]      @relation("PermissionSubject")
-  permissionsAwarded       StaffPermission[]      @relation("PermissionGrantedBy")
-  performanceNotes         PerformanceNote[]      @relation("PerformanceSubject")
-  performanceNotesAuthored PerformanceNote[]      @relation("PerformanceAuthor")
+  permissionsGranted       StaffPermission[]         @relation("PermissionSubject")
+  permissionsAwarded       StaffPermission[]         @relation("PermissionGrantedBy")
+  performanceNotes         PerformanceNote[]         @relation("PerformanceSubject")
+  performanceNotesAuthored PerformanceNote[]         @relation("PerformanceAuthor")
   giftCardsReceived        GiftCard[]
   referralCode             ReferralCode?
   referralRedemption       ReferralRedemption?
@@ -344,8 +345,10 @@ model User {
   campaignsCreated         Campaign[]
   apiKeysCreated           ApiKey[]
   aiAssistantQueries       AiAssistantQuery[]
-  aiMemoriesAbout          AiMemoryEntry[]   @relation("AiMemorySubject")
-  aiMemoriesAuthored       AiMemoryEntry[]   @relation("AiMemoryAuthor")
+  aiMemoriesAbout          AiMemoryEntry[]           @relation("AiMemorySubject")
+  aiMemoriesAuthored       AiMemoryEntry[]           @relation("AiMemoryAuthor")
+  aiApprovalsReviewed      AiApprovalRequest[]       @relation("AiApprovalReviewer")
+  aiRecommendationsDecided AiRecommendationOutcome[] @relation("AiRecommendationDecider")
 
   @@index([branchId])
   @@index([departmentId])
@@ -1495,6 +1498,16 @@ enum AiMemoryKind {
   ACCEPTED_SUGGESTION
   REJECTED_SUGGESTION
   EXPLANATION
+  // Phase 11 Part 3 — Restaurant Memory categories (see AiMemoryService).
+  CUSTOMER_PREFERENCE
+  MANAGER_FEEDBACK
+  CAMPAIGN_HISTORY
+  SUPPLIER_ISSUE
+  INVENTORY_FAILURE
+  HOLIDAY_DEMAND
+  BRANCH_BEHAVIOR
+  STAFF_PERFORMANCE
+  LEARNING_DIGEST
 }
 
 /// Long-term memory for the Restaurant Intelligence Platform (Phase 7) —
@@ -1577,18 +1590,18 @@ enum DriftSeverity {
 /// Deliberately a new table rather than adding these columns to
 /// `MlModelRun`, so Phase 6's forecasting code and schema stay untouched.
 model PredictiveModelRun {
-  id             String                @id @default(uuid())
-  modelKey       String                @map("model_key")
-  version        Int
-  status         MlModelStatus         @default(READY)
+  id              String               @id @default(uuid())
+  modelKey        String               @map("model_key")
+  version         Int
+  status          MlModelStatus        @default(READY)
   deploymentStage PredictiveModelStage @default(EXPERIMENTAL) @map("deployment_stage")
-  datasetHash    String                @map("dataset_hash")
-  datasetVersion String                @map("dataset_version")
-  sampleCount    Int                   @map("sample_count")
-  featureSchema  Json                  @map("feature_schema")
-  metrics        Json?
-  notes          String?
-  trainedAt      DateTime              @default(now()) @map("trained_at")
+  datasetHash     String               @map("dataset_hash")
+  datasetVersion  String               @map("dataset_version")
+  sampleCount     Int                  @map("sample_count")
+  featureSchema   Json                 @map("feature_schema")
+  metrics         Json?
+  notes           String?
+  trainedAt       DateTime             @default(now()) @map("trained_at")
 
   @@unique([modelKey, version])
   @@index([modelKey, deploymentStage])
@@ -1599,18 +1612,203 @@ model PredictiveModelRun {
 /// surfaced at `GET /admin/ai/drift` and the trigger record consulted by
 /// the retraining pipeline (training/retraining.service.ts).
 model DriftAlert {
-  id             String        @id @default(uuid())
-  modelKey       String        @map("model_key")
-  driftType      DriftType     @map("drift_type")
-  severity       DriftSeverity
-  metricName     String        @map("metric_name")
-  baselineValue  Float         @map("baseline_value")
-  currentValue   Float         @map("current_value")
-  detail         String
-  detectedAt     DateTime      @default(now()) @map("detected_at")
-  resolvedAt     DateTime?     @map("resolved_at")
+  id            String        @id @default(uuid())
+  modelKey      String        @map("model_key")
+  driftType     DriftType     @map("drift_type")
+  severity      DriftSeverity
+  metricName    String        @map("metric_name")
+  baselineValue Float         @map("baseline_value")
+  currentValue  Float         @map("current_value")
+  detail        String
+  detectedAt    DateTime      @default(now()) @map("detected_at")
+  resolvedAt    DateTime?     @map("resolved_at")
 
   @@index([modelKey, detectedAt])
   @@index([resolvedAt])
   @@map("drift_alerts")
+}
+
+// ---------------------------------------------------------------------------
+// Autonomous Restaurant Intelligence Platform (Phase 11 Part 3)
+// ---------------------------------------------------------------------------
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum ApprovalRiskLevel {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum ApprovalActionType {
+  REFUND
+  DELETE
+  DISCOUNT
+  PROMOTION
+  INVENTORY_PURCHASE_ORDER
+  PRICE_CHANGE
+  MARKETING_CAMPAIGN
+  STAFFING_CHANGE
+  OTHER
+}
+
+/// The Human Approval Layer — every irreversible or high-risk action an AI
+/// component wants to take (auto-drafted PO, discount, promotion, refund,
+/// price change) is written here as PENDING instead of executed directly.
+/// `payload` carries whatever the eventual executor (see
+/// `ApprovalExecutorRegistry`) needs to perform the action once a manager
+/// approves it — the AI never bypasses this table for the action types
+/// above, matching this platform's standing "never perform an irreversible
+/// action autonomously" rule.
+model AiApprovalRequest {
+  id               String             @id @default(uuid())
+  actionType       ApprovalActionType @map("action_type")
+  riskLevel        ApprovalRiskLevel  @map("risk_level")
+  summary          String
+  payload          Json
+  status           ApprovalStatus     @default(PENDING)
+  requestedByAgent String             @map("requested_by_agent")
+  reviewedByUserId String?            @map("reviewed_by_user_id")
+  reviewedByUser   User?              @relation("AiApprovalReviewer", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
+  reviewedAt       DateTime?          @map("reviewed_at")
+  reviewNotes      String?            @map("review_notes")
+  branchId         String?            @map("branch_id")
+  branch           Branch?            @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  createdAt        DateTime           @default(now()) @map("created_at")
+
+  @@index([status, createdAt])
+  @@index([actionType, status])
+  @@map("ai_approval_requests")
+}
+
+enum WorkflowTriggerType {
+  EVENT
+  SCHEDULE
+  MANUAL
+}
+
+enum WorkflowRunStatus {
+  RUNNING
+  WAITING_APPROVAL
+  COMPLETED
+  FAILED
+}
+
+/// AI Workflow Engine — an if/then step chain (e.g. "inventory low ->
+/// supplier available -> auto-create PO draft -> notify manager -> track
+/// approval -> receive inventory -> update stock"). `triggerConfig` and
+/// `steps` are small JSON DSLs interpreted by `WorkflowEngineService`, not
+/// arbitrary code — see intelligence/workflows/workflow-step.types.ts for
+/// the step-kind union this platform actually supports (v1 scope).
+model AiWorkflowDefinition {
+  id            String              @id @default(uuid())
+  name          String
+  description   String?
+  triggerType   WorkflowTriggerType @map("trigger_type")
+  triggerConfig Json                @map("trigger_config")
+  steps         Json
+  enabled       Boolean             @default(true)
+  createdAt     DateTime            @default(now()) @map("created_at")
+  updatedAt     DateTime            @updatedAt @map("updated_at")
+  runs          AiWorkflowRun[]
+
+  @@map("ai_workflow_definitions")
+}
+
+/// One row per execution of an `AiWorkflowDefinition` — `stepLog` records
+/// each step's outcome in order, so a run's full trace is reconstructable
+/// without re-running it.
+model AiWorkflowRun {
+  id          String               @id @default(uuid())
+  workflowId  String               @map("workflow_id")
+  workflow    AiWorkflowDefinition @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  status      WorkflowRunStatus    @default(RUNNING)
+  context     Json
+  stepLog     Json                 @map("step_log")
+  startedAt   DateTime             @default(now()) @map("started_at")
+  completedAt DateTime?            @map("completed_at")
+
+  @@index([workflowId, startedAt])
+  @@map("ai_workflow_runs")
+}
+
+enum KnowledgeSourceFormat {
+  MARKDOWN
+  PLAIN_TEXT
+  PDF
+  DOCX
+  IMAGE
+}
+
+/// AI Knowledge Base — policies, recipes, training manuals, food safety,
+/// HR policies, supplier agreements, marketing/architecture/API docs.
+/// `content` is always the plain-text/markdown actually indexed into
+/// `VectorEntry` (namespace "ai-knowledge-base"); `sourceFormat` records
+/// what the original document was so a future binary-parsing pipeline
+/// (PDF/DOCX/OCR) has somewhere to write extracted text — this phase
+/// deliberately does not ship that parser (see docs/ROADMAP.md's Part 3
+/// scope notes), so PDF/DOCX/IMAGE documents must be ingested as
+/// pre-extracted text today.
+model AiKnowledgeDocument {
+  id           String                @id @default(uuid())
+  title        String
+  category     String
+  content      String
+  sourceFormat KnowledgeSourceFormat @default(MARKDOWN) @map("source_format")
+  metadata     Json?
+  createdAt    DateTime              @default(now()) @map("created_at")
+  updatedAt    DateTime              @updatedAt @map("updated_at")
+
+  @@index([category])
+  @@map("ai_knowledge_documents")
+}
+
+/// Continuous Evaluation — a time series of measured metric values
+/// (accuracy/precision/recall/latency/etc.) so `EvaluationTrackerService`
+/// can report trends rather than a single snapshot.
+model AiEvaluationRecord {
+  id         String   @id @default(uuid())
+  metricName String   @map("metric_name")
+  modelKey   String?  @map("model_key")
+  value      Float
+  context    Json?
+  recordedAt DateTime @default(now()) @map("recorded_at")
+
+  @@index([metricName, recordedAt])
+  @@map("ai_evaluation_records")
+}
+
+enum RecommendationOutcomeStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  IGNORED
+}
+
+/// Tracks whether a human accepted/rejected an AI recommendation — the
+/// basis for the "Recommendation Acceptance" and business-impact/ROI
+/// metrics `EvaluationTrackerService` reports. `flaggedHallucination` is a
+/// manual flag (an admin marks a recommendation as unfounded) rather than
+/// an automatic detector — this platform has no ground-truth signal to
+/// measure hallucination rate automatically, a documented gap.
+model AiRecommendationOutcome {
+  id                   String                      @id @default(uuid())
+  source               String
+  recommendation       String
+  status               RecommendationOutcomeStatus @default(PENDING)
+  estimatedImpact      Float?                      @map("estimated_impact")
+  actualImpact         Float?                      @map("actual_impact")
+  decidedByUserId      String?                     @map("decided_by_user_id")
+  decidedByUser        User?                       @relation("AiRecommendationDecider", fields: [decidedByUserId], references: [id], onDelete: SetNull)
+  decidedAt            DateTime?                   @map("decided_at")
+  flaggedHallucination Boolean                     @default(false) @map("flagged_hallucination")
+  createdAt            DateTime                    @default(now()) @map("created_at")
+
+  @@index([source, status])
+  @@map("ai_recommendation_outcomes")
 }

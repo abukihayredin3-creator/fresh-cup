@@ -1,7 +1,25 @@
 import { Module } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { IntelligenceModule } from "../modules/intelligence/intelligence.module";
+import { CatalogModule } from "../modules/catalog/catalog.module";
+import { MarketingModule } from "../modules/marketing/marketing.module";
+import { PaymentsModule } from "../modules/payments/payments.module";
+import { PromotionsModule } from "../modules/promotions/promotions.module";
+import { PurchasingModule } from "../modules/purchasing/purchasing.module";
 import { PrismaService } from "../database/prisma.service";
+import { ApprovalExecutorRegistry } from "./approvals/approval-executor.registry";
+import { ApprovalService } from "./approvals/approval.service";
+import { ApprovalsController } from "./approvals/approvals.controller";
+import { AgentsController } from "./agents/agents.controller";
+import { CoordinatorAgentService } from "./agents/coordinator-agent.service";
+import { DeliveryAgent } from "./agents/delivery.agent";
+import { ExecutiveAgent } from "./agents/executive.agent";
+import { FinanceAgent } from "./agents/finance.agent";
+import { HrAgent } from "./agents/hr.agent";
+import { InventoryAgent } from "./agents/inventory.agent";
+import { KitchenAgent } from "./agents/kitchen.agent";
+import { MarketingAgent } from "./agents/marketing.agent";
+import { SalesAgent } from "./agents/sales.agent";
 import { AssistantAiController } from "./controllers/assistant-ai.controller";
 import { AiMemoryController } from "./controllers/ai-memory.controller";
 import { CustomerAiController } from "./controllers/customer-ai.controller";
@@ -69,8 +87,17 @@ import { EmbeddingBackfillWorker } from "./workers/embedding-backfill.worker";
  * domain — and Phase 6's own AiAssistantService, unaffected — can build on.
  */
 @Module({
-  imports: [IntelligenceModule],
+  imports: [
+    IntelligenceModule,
+    CatalogModule,
+    PromotionsModule,
+    MarketingModule,
+    PaymentsModule,
+    PurchasingModule,
+  ],
   controllers: [
+    ApprovalsController,
+    AgentsController,
     ExecutiveAiController,
     SalesAiController,
     CustomerAiController,
@@ -89,6 +116,17 @@ import { EmbeddingBackfillWorker } from "./workers/embedding-backfill.worker";
     SegmentationController,
   ],
   providers: [
+    ApprovalService,
+    ApprovalExecutorRegistry,
+    SalesAgent,
+    MarketingAgent,
+    InventoryAgent,
+    KitchenAgent,
+    DeliveryAgent,
+    FinanceAgent,
+    HrAgent,
+    ExecutiveAgent,
+    CoordinatorAgentService,
     {
       provide: LLM_PROVIDER_TOKEN,
       useFactory: createLlmProvider,

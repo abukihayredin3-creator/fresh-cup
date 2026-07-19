@@ -14,5 +14,6 @@ import { ReferralsService } from "./referrals/referrals.service";
   imports: [AuthModule, NotificationsModule],
   controllers: [BannersController, GiftCardsController, ReferralsController, CampaignsController],
   providers: [BannersService, GiftCardsService, ReferralsService, CampaignsService],
+  exports: [CampaignsService],
 })
 export class MarketingModule {}
