@@ -8,14 +8,16 @@ admin dashboard, customer portal, delivery dashboard, loyalty system, QR
 menu, inventory management, and analytics — built as one coherent system
 rather than disconnected projects.
 
-> **Status:** Phase 3 complete — `apps/api` implements auth/RBAC, catalog,
+> **Status:** Phase 4 complete — `apps/api` implements auth/RBAC, catalog,
 > inventory (Phase 1), the full ordering engine — cart, checkout, payments,
-> coupons, loyalty, real-time order updates (Phase 2) — and the restaurant
+> coupons, loyalty, real-time order updates (Phase 2) — the restaurant
 > operations platform — kitchen display, delivery/driver management,
 > inventory automation, purchasing, audit logging, and an admin
-> dashboard/analytics (Phase 3). The frontend apps (`web`, `admin`,
-> `delivery`, `mobile`) are still scaffolds consuming none of this yet —
-> backend-first, same pattern every phase so far. See
+> dashboard/analytics (Phase 3) — and the customer experience platform:
+> `apps/web` (full site, i18n, dark mode, PWA) and `apps/mobile` (Expo/React
+> Native) both consume those APIs end to end, with e2e/component test
+> coverage. `apps/admin` and `apps/delivery` are still scaffolds — their
+> frontends are Phase 6/Phase 3-driver-PWA work, not yet built. See
 > [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
 ## Start here
@@ -37,13 +39,20 @@ rather than disconnected projects.
   [`docs/API_DESIGN.md`](docs/API_DESIGN.md) for the full catalog). Health
   checks at `/health` (liveness) and `/health/ready` (Postgres + Redis
   connectivity), env validation on boot.
-- **`apps/web`** — Next.js marketing site / customer portal / QR menu (port 3000, scaffold only).
+- **`apps/web`** — Next.js customer site: marketing/menu/cart/checkout/live
+  order tracking/account area, i18n (English/Amharic), dark mode, PWA
+  (installable + offline caching), WCAG 2 AA (port 3000). See
+  [`apps/web/e2e`](apps/web/e2e) for the Playwright suite.
 - **`apps/admin`** — Next.js staff/owner dashboard (port 3001, scaffold only).
 - **`apps/delivery`** — Next.js driver dashboard, installable as a PWA (port 3002, scaffold only).
-- **`apps/mobile`** — Expo (React Native) app for Android + iOS, using expo-router.
+- **`apps/mobile`** — Expo (React Native, SDK 57) app for Android + iOS,
+  using expo-router: the same customer journeys as `apps/web`, natively —
+  theming, i18n, menu/cart/checkout/order-tracking/profile, push
+  notifications. Jest + React Native Testing Library component tests.
 - **`packages/ui`** — Shared brand components (web) built on the Tailwind preset.
 - **`packages/types`**, **`packages/utils`**, **`packages/api-client`** — Shared
-  TypeScript types, helpers, and the (currently transport-only) API client.
+  TypeScript types, helpers, and API client consumed by `apps/web` and
+  `apps/mobile`.
 - **`packages/config`** — Shared TypeScript/ESLint/Tailwind configuration every
   app and package extends from.
 - **`infra/docker`** — `docker-compose.yml` for local Postgres/Redis/MinIO, plus
@@ -89,9 +98,15 @@ Or run a single app: `pnpm --filter @fresh-cup/web dev`, `pnpm --filter
 pnpm lint         # ESLint across every app/package
 pnpm typecheck    # tsc --noEmit across every app/package
 pnpm build        # production build of every app/package
-pnpm test         # unit + e2e tests (apps/api today)
+pnpm test         # unit tests: apps/api (Jest), apps/mobile (Jest + RTL)
+pnpm test:e2e     # e2e tests: apps/api (Jest), apps/web (Playwright)
 pnpm format       # Prettier, whole repo
 ```
+
+`apps/web`'s Playwright suite needs the API running separately (it's not
+started by Playwright) — see [`apps/web/e2e/README.md`](apps/web/e2e/README.md)
+for how to also cover the login journey, which needs a way to read the
+dev API's logged OTP codes since there's no real SMS provider.
 
 All of the above run through Turborepo (`turbo.json`), so only what changed
 gets re-run/re-built on subsequent runs.

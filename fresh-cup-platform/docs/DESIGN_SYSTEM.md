@@ -96,6 +96,9 @@ mapped to `caption, body-sm, body, h5, h4, h3, h2, h1`.
 
 `packages/ui` exports the tokens above as a Tailwind preset
 (`tailwind-preset.ts`) consumed by `apps/web`, `apps/admin`, and
-`apps/delivery`, and as a matching NativeWind theme for `apps/mobile` —
-one definition, four consumers, so a color or type-scale change is a
-one-line edit that propagates everywhere instead of four manual updates.
+`apps/delivery`. `apps/mobile` doesn't use NativeWind — React Native has no
+CSS engine to target — so its `src/theme/tokens.ts` hand-mirrors the same
+hex values as a plain TS object (`brand`/`lightTheme`/`darkTheme`) consumed
+via `useTheme()` and `StyleSheet.create`. One source of truth for the
+values, kept in sync by hand across the two representations (a change here
+means updating both `theme.css` and `apps/mobile/src/theme/tokens.ts`).

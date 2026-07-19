@@ -53,7 +53,7 @@ breaking migration once real orders/customers exist.
   (global + per-user), applied atomically at checkout
 - Loyalty points: accrual ledger tied to a _settled_ payment (not just order
   placement), `GET /loyalty/me` for balance + history — tiers and a
-  redemption/rewards-catalog flow are Phase 4
+  redemption/rewards-catalog flow are Phase 5
 - Payments: dependency-inverted provider interface, Chapa (TeleBirr/CBE
   Birr/HelloCash/Amole/cards, sandbox fallback with no API key configured)
   - cash (pay-at-counter/on-delivery, staff-confirmed settlement), signed
@@ -124,17 +124,55 @@ breaking migration once real orders/customers exist.
   and a manager can answer "how are we doing today" from one endpoint —
   all without AI-driven recommendations or demand forecasting
 
-## Phase 4 — Loyalty rewards & promotions campaigns
+## Phase 4 — Customer experience platform ✅
+
+- `apps/web` (Next.js): the full customer-facing site — locale-prefixed
+  i18n routing (English/Amharic, shared `packages/i18n` message catalogs),
+  light/dark theming, menu browse/search/category filter, product detail
+  with modifier selection, server-persisted cart, checkout (order type,
+  coupon, payment method), live order tracking over the Phase 2
+  `/ws/orders` gateway, and an account area (profile, address book, order
+  history, favorites, loyalty balance)
+- `apps/mobile` (Expo SDK 57/React Native): the same customer journeys
+  natively — theming/i18n/navigation shell, menu/cart/checkout/order-
+  tracking/profile screens, and Expo push-token registration against the
+  existing Phase 2 `POST /notifications/push-tokens` endpoint (delivery
+  itself still needs a real Expo/FCM provider behind the Phase 2
+  `PushProvider` interface — currently `ConsolePushProvider`, see Phase 5)
+- Progressive Web App: installable manifest, an offline-caching service
+  worker (cache-first app shell, stale-while-revalidate for menu/branch/
+  category reads), and an offline banner
+- Accessibility: WCAG 2 AA, verified with an automated axe-core scan (see
+  below) across the key pages in both themes — caught and fixed a real
+  insufficient-contrast bug in the home page hero
+- Shared foundation grown for this phase: `packages/types` domain DTOs,
+  `packages/api-client` resource methods, and an expanded `packages/ui`
+  component library (+ dark-mode tokens) consumed by `apps/web` and, via
+  native equivalents, `apps/mobile` — neither app duplicates backend logic
+- Automated tests: a Playwright e2e suite (`apps/web/e2e`) covering guest
+  browsing, a full login-to-order-completion journey, and the WCAG AA
+  scan; Jest + React Native Testing Library component tests for
+  `apps/mobile`
+- **Exit criteria:** a customer can complete the entire browsing-to-order-
+  completion journey on either the responsive web app or the native
+  mobile app, in either language, in either theme, meeting WCAG 2 AA —
+  without any backend changes beyond what Phases 1–3 already shipped
+
+## Phase 5 — Loyalty rewards & promotions campaigns
 
 - Loyalty tiers (calculated from the Phase 2 accrual ledger), rewards
   catalog, redemption flow (spend points for a discount/free item)
 - Coupon campaigns: scheduled/targeted promotions on top of the Phase 2
   coupon engine (which already handles validation, limits, and redemption)
 - Customer portal: loyalty balance/history (already served by the Phase 2
-  API) surfaced in the UI alongside rewards redemption
+  API, and already surfaced read-only in Phase 4's `apps/web`/`apps/mobile`)
+  gets a redemption flow added alongside the balance/history view
+- Real push delivery: an `ExpoPushProvider`/FCM implementation behind the
+  Phase 2 `PushProvider` interface, replacing `ConsolePushProvider` now
+  that Phase 4 shipped a client that actually registers device tokens
 - **Exit criteria:** repeat customers can redeem points for a reward; marketing can run a scheduled coupon campaign without engineering involvement
 
-## Phase 5 — Inventory forecasting & multi-supplier sourcing
+## Phase 6 — Inventory forecasting & multi-supplier sourcing
 
 - Recipe-based auto-deduction, low-stock alerts, and the supplier/
   purchase-order workflow already shipped in Phase 3 — this phase covers
@@ -146,12 +184,6 @@ breaking migration once real orders/customers exist.
 - **Exit criteria:** the system suggests a reorder (quantity + supplier)
   before an item actually runs out, instead of only alerting once it's
   already at/below threshold
-
-## Phase 6 — Native mobile apps
-
-- `apps/mobile` (Expo/React Native): full ordering flow, push notifications (FCM), biometric login, offline cart persistence
-- Play Store + App Store submission, EAS OTA pipeline
-- **Exit criteria:** feature parity with the web ordering flow, published on both stores
 
 ## Phase 7 — Analytics at scale
 
@@ -189,11 +221,12 @@ breaking migration once real orders/customers exist.
 - Phase 3 built the delivery/kitchen/inventory/purchasing/audit/analytics
   APIs backend-first, same as Phases 1–2 — `apps/delivery`'s driver-facing
   PWA and `apps/admin`'s dashboard UI consume those APIs but are their own
-  frontend work, not yet built. When the driver PWA is built, it ships as a
-  PWA rather than a native app; revisit native only if drivers need
-  background location tracking beyond what mobile-web geolocation
-  permissions reliably provide in practice.
-- Native mobile apps are deliberately Phase 6, after the web ordering flow
-  and API are proven with real orders — building three clients (web, iOS,
-  Android) against an unvalidated API multiplies the cost of any early
-  design mistake.
+  frontend work, not yet built (Phase 4 built the _customer_-facing
+  frontends only). When the driver PWA is built, it ships as a PWA rather
+  than a native app; revisit native only if drivers need background
+  location tracking beyond what mobile-web geolocation permissions
+  reliably provide in practice.
+- Phase 4 shipped `apps/web` and `apps/mobile` together rather than
+  sequencing native after web, since both consume the same Phase 1–3 APIs
+  and shared `packages/ui`/`packages/api-client`/`packages/types` — there
+  was no unvalidated-API risk left to de-risk by staggering them.

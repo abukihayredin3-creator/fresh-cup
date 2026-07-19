@@ -47,13 +47,14 @@ test.describe("guest browsing", () => {
 
   test("dark mode toggle persists the preference", async ({ page }) => {
     await page.goto("/en");
-    const toggle = page.getByRole("button", { name: /^(dark|light)$/i });
-    await expect(toggle).toBeVisible();
-    await toggle.click();
-    const theme = await page.evaluate(() => document.documentElement.dataset.theme);
-    expect(theme).toBe("dark");
+    await page.getByRole("button", { name: "Dark" }).click();
+    // Wait for the toggle's own re-render (not just the click event) before trusting
+    // localStorage was written — setPreference's write is synchronous with the click,
+    // but this also confirms the app has actually re-rendered into the dark state.
+    await expect(page.getByRole("button", { name: "Light" })).toBeVisible();
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+
     await page.reload();
-    const themeAfterReload = await page.evaluate(() => document.documentElement.dataset.theme);
-    expect(themeAfterReload).toBe("dark");
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   });
 });
