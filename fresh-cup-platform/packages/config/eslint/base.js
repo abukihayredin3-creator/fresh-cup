@@ -46,6 +46,19 @@ module.exports = tseslint.config(
     },
   },
   {
+    // Jest setup/config files run directly under Node (like the block above) but also
+    // reference Jest's own globals (`jest`, `describe`, ...) before any test file's own
+    // app-level config would register them — this root fallback config doesn't include
+    // eslint-plugin-jest or similar by default.
+    files: ["**/jest.setup.js", "**/jest.config.js"],
+    languageOptions: {
+      globals: { ...globals.node, ...globals.jest },
+    },
+    rules: {
+      "@typescript-eslint/no-require-imports": "off",
+    },
+  },
+  {
     // Static service worker scripts served from public/ run in the browser's
     // service-worker global scope (self, caches, fetch, ...), not Node — an
     // app's own config (e.g. eslint-config-next) usually covers this, but

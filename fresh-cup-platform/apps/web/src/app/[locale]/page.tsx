@@ -27,11 +27,11 @@ export default async function Home({ params }: { params: Promise<{ locale: strin
     <>
       <section className="bg-tint-green">
         <div className="mx-auto flex max-w-6xl flex-col items-center gap-6 px-4 py-16 text-center sm:px-6 sm:py-24">
-          <p className="font-sans text-caption uppercase tracking-widest text-fg-muted">
+          <p className="font-sans text-caption uppercase tracking-widest text-fg">
             Merkato, Addis Ababa
           </p>
           <h1 className="max-w-2xl font-display text-h1 text-fg">Fresh Cup Juice House</h1>
-          <p className="max-w-xl font-sans text-body text-fg-muted">
+          <p className="max-w-xl font-sans text-body text-fg">
             Cold-pressed juices, smoothies, and healthy bites — order for dine-in, pickup, or
             delivery.
           </p>
