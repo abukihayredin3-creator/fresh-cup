@@ -1,4 +1,9 @@
-import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
 import {
   ApprovalActionType,
   ApprovalRiskLevel,
@@ -8,6 +13,7 @@ import {
 import type { Prisma } from "@prisma/client";
 import { PrismaService } from "../../database/prisma.service";
 import type { RequestUser } from "../../common/types/request-user.interface";
+import { PolicyEngineService } from "../governance/policy-engine.service";
 import { ApprovalExecutorRegistry } from "./approval-executor.registry";
 
 export interface RequestApprovalInput {
@@ -33,13 +39,20 @@ export class ApprovalService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly executors: ApprovalExecutorRegistry,
+    private readonly policyEngine: PolicyEngineService,
   ) {}
 
-  request(input: RequestApprovalInput): Promise<AiApprovalRequest> {
+  async request(input: RequestApprovalInput): Promise<AiApprovalRequest> {
+    const decision = this.policyEngine.evaluate(input.actionType, input.payload);
+    if (decision.blocked) {
+      throw new ForbiddenException(decision.reason ?? "Blocked by AI governance policy.");
+    }
+    const riskLevel = decision.escalateTo ?? input.riskLevel;
+
     return this.prisma.aiApprovalRequest.create({
       data: {
         actionType: input.actionType,
-        riskLevel: input.riskLevel,
+        riskLevel,
         summary: input.summary,
         payload: input.payload,
         requestedByAgent: input.requestedByAgent,

@@ -33,6 +33,11 @@ import { WorkflowsController } from "./workflows/workflows.controller";
 import { DigitalTwinService } from "./simulator/digital-twin.service";
 import { ScenarioSimulatorService } from "./simulator/scenario-simulator.service";
 import { SimulatorController } from "./simulator/simulator.controller";
+import { EvaluationTrackerController } from "./evaluation-tracker/evaluation-tracker.controller";
+import { EvaluationTrackerService } from "./evaluation-tracker/evaluation-tracker.service";
+import { GovernanceController } from "./governance/governance.controller";
+import { PolicyEngineService } from "./governance/policy-engine.service";
+import { PromptRegistryService } from "./governance/prompt-registry.service";
 import { AssistantAiController } from "./controllers/assistant-ai.controller";
 import { AiMemoryController } from "./controllers/ai-memory.controller";
 import { CustomerAiController } from "./controllers/customer-ai.controller";
@@ -119,6 +124,8 @@ import { EmbeddingBackfillWorker } from "./workers/embedding-backfill.worker";
     WorkflowsController,
     AutomationController,
     SimulatorController,
+    EvaluationTrackerController,
+    GovernanceController,
     ExecutiveAiController,
     SalesAiController,
     CustomerAiController,
@@ -155,6 +162,9 @@ import { EmbeddingBackfillWorker } from "./workers/embedding-backfill.worker";
     AutomationService,
     ScenarioSimulatorService,
     DigitalTwinService,
+    EvaluationTrackerService,
+    PolicyEngineService,
+    PromptRegistryService,
     {
       provide: LLM_PROVIDER_TOKEN,
       useFactory: createLlmProvider,

@@ -3,6 +3,7 @@ import type { PrismaService } from "../../database/prisma.service";
 import type { RequestUser } from "../../common/types/request-user.interface";
 import { ApprovalService } from "./approval.service";
 import type { ApprovalExecutorRegistry } from "./approval-executor.registry";
+import type { PolicyEngineService } from "../governance/policy-engine.service";
 
 const ACTOR: RequestUser = { id: "manager-1", role: "MANAGER" as never, branchId: "b1" };
 
@@ -25,8 +26,11 @@ describe("ApprovalService", () => {
     const executors = {
       execute: jest.fn().mockResolvedValue({ executed: true, note: "done" }),
     } as unknown as jest.Mocked<ApprovalExecutorRegistry>;
-    const service = new ApprovalService(prisma, executors);
-    return { service, prisma, executors };
+    const policyEngine = {
+      evaluate: jest.fn().mockReturnValue({ blocked: false }),
+    } as unknown as jest.Mocked<PolicyEngineService>;
+    const service = new ApprovalService(prisma, executors, policyEngine);
+    return { service, prisma, executors, policyEngine };
   }
 
   it("creates a PENDING request via request()", async () => {
@@ -100,6 +104,47 @@ describe("ApprovalService", () => {
     expect(prisma.aiApprovalRequest.update).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ status: ApprovalStatus.REJECTED, reviewNotes: "not now" }),
+      }),
+    );
+  });
+
+  it("request() throws when the policy engine blocks the action", async () => {
+    const { service, prisma, policyEngine } = makeService();
+    (policyEngine.evaluate as jest.Mock).mockReturnValue({
+      blocked: true,
+      reason: "too risky",
+    });
+
+    await expect(
+      service.request({
+        actionType: ApprovalActionType.DISCOUNT,
+        riskLevel: ApprovalRiskLevel.MEDIUM,
+        summary: "80% off everything",
+        payload: { value: 80 },
+        requestedByAgent: "test",
+      }),
+    ).rejects.toThrow("too risky");
+    expect(prisma.aiApprovalRequest.create).not.toHaveBeenCalled();
+  });
+
+  it("request() escalates riskLevel when the policy engine flags it, without blocking", async () => {
+    const { service, prisma, policyEngine } = makeService();
+    (policyEngine.evaluate as jest.Mock).mockReturnValue({
+      blocked: false,
+      escalateTo: ApprovalRiskLevel.CRITICAL,
+    });
+
+    await service.request({
+      actionType: ApprovalActionType.INVENTORY_PURCHASE_ORDER,
+      riskLevel: ApprovalRiskLevel.MEDIUM,
+      summary: "Large reorder",
+      payload: {},
+      requestedByAgent: "test",
+    });
+
+    expect(prisma.aiApprovalRequest.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ riskLevel: ApprovalRiskLevel.CRITICAL }),
       }),
     );
   });
