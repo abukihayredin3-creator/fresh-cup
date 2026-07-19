@@ -107,6 +107,15 @@ export class EnvironmentVariables {
   // *_SEED_EMAIL / *_SEED_PASSWORD (ADMIN/MANAGER/STAFF) are read directly
   // from process.env by prisma/seed.ts, a standalone script the running API
   // never touches — they're intentionally not part of this class.
+
+  // --- Phase 6: AI assistant ---
+
+  // Same "sandbox fallback when unset" pattern as CHAPA_SECRET_KEY: with no
+  // key configured, AiAssistantService answers with deterministic templates
+  // over the same real data instead of calling the Claude API.
+  @IsOptional()
+  @IsString()
+  ANTHROPIC_API_KEY?: string;
 }
 
 export function validateEnv(config: Record<string, unknown>): EnvironmentVariables {

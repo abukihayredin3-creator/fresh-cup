@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { APP_FILTER, APP_GUARD } from "@nestjs/core";
 import { EventEmitterModule } from "@nestjs/event-emitter";
+import { ScheduleModule } from "@nestjs/schedule";
 import { ThrottlerModule } from "@nestjs/throttler";
 import { validateEnv } from "./common/config/env.validation";
 import { HttpExceptionFilter } from "./common/filters/http-exception.filter";
@@ -18,6 +19,7 @@ import { CatalogModule } from "./modules/catalog/catalog.module";
 import { DeliveryOpsModule } from "./modules/delivery/delivery-ops.module";
 import { EmployeesModule } from "./modules/employees/employees.module";
 import { HealthModule } from "./modules/health/health.module";
+import { IntelligenceModule } from "./modules/intelligence/intelligence.module";
 import { InventoryModule } from "./modules/inventory/inventory.module";
 import { KitchenModule } from "./modules/kitchen/kitchen.module";
 import { LoyaltyModule } from "./modules/loyalty/loyalty.module";
@@ -44,6 +46,10 @@ import { WebsocketsModule } from "./websockets/websockets.module";
     // Cross-cutting domain events (order.paid -> loyalty accrual/notifications,
     // etc.) — see common/events/order-events.ts for the full contract.
     EventEmitterModule.forRoot(),
+    // Phase 6: powers the nightly forecast-regeneration job (see
+    // modules/intelligence/forecasting/forecasting.scheduler.ts) — the only
+    // scheduled/cron infrastructure in the codebase.
+    ScheduleModule.forRoot(),
     ThrottlerModule.forRoot([{ name: "default", ttl: 60_000, limit: 60 }]),
     PrismaModule,
     RedisModule,
@@ -70,6 +76,7 @@ import { WebsocketsModule } from "./websockets/websockets.module";
     MarketingModule,
     ReviewsModule,
     SecurityModule,
+    IntelligenceModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: AppThrottlerGuard },

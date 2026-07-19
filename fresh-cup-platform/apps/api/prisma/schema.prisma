@@ -6,8 +6,11 @@
 // Phase 3: kitchen stations + prep timers, driver/delivery management
 // (circular zones, GPS tracking), recipe-based automatic inventory
 // deduction + low-stock alerts, supplier/purchase-order workflow, audit
-// logging, admin/sales dashboards. Loyalty redemption/rewards and
-// multi-branch HQ management are still later phases — see
+// logging, admin/sales dashboards. Phase 5: branch hours, employees/
+// departments/shifts/attendance, staff permissions, restaurant settings,
+// banners, gift cards, referrals, campaigns, reviews, API keys. Phase 6: AI
+// & business intelligence — model registry + forecast snapshots for sales/
+// demand forecasting, AI assistant query log. See
 // fresh-cup-platform/docs/DATABASE_SCHEMA.md and docs/ROADMAP.md.
 //
 // IDs use Prisma's default (client-generated UUIDv4) rather than a
@@ -203,6 +206,36 @@ enum CampaignSegment {
   VIP_CUSTOMERS
 }
 
+/// Phase 6 — AI & Business Intelligence.
+/// What a model run predicts. One enum value per forecasting surface in the
+/// spec (daily/weekly/monthly sales collapse to one REVENUE/ORDERS pair
+/// distinguished by `ForecastGranularity`, not separate metrics).
+enum ForecastMetric {
+  SALES_REVENUE
+  SALES_ORDERS
+  HOURLY_DEMAND
+  PRODUCT_DEMAND
+  INGREDIENT_DEMAND
+}
+
+enum ForecastGranularity {
+  HOURLY
+  DAILY
+  WEEKLY
+  MONTHLY
+}
+
+enum MlModelStatus {
+  READY
+  FAILED
+}
+
+enum AiQueryOutcome {
+  ANSWERED
+  FALLBACK
+  ERROR
+}
+
 // ---------------------------------------------------------------------------
 // Branches
 // ---------------------------------------------------------------------------
@@ -220,24 +253,25 @@ model Branch {
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
-  users           User[]
-  menuCategories  MenuCategory[]
-  menuItems       MenuItem[]
-  inventoryItems  InventoryItem[]
-  tables          Table[]
-  modifierGroups  ModifierGroup[]
-  carts           Cart[]
-  orders          Order[]
-  kitchenStations KitchenStation[]
-  deliveryZones   DeliveryZone[]
-  deliveries      Delivery[]
-  suppliers       Supplier[]
-  purchaseOrders  PurchaseOrder[]
-  hours           BranchHours[]
-  departments     Department[]
-  shifts          Shift[]
-  attendances     Attendance[]
-  banners         Banner[]
+  users             User[]
+  menuCategories    MenuCategory[]
+  menuItems         MenuItem[]
+  inventoryItems    InventoryItem[]
+  tables            Table[]
+  modifierGroups    ModifierGroup[]
+  carts             Cart[]
+  orders            Order[]
+  kitchenStations   KitchenStation[]
+  deliveryZones     DeliveryZone[]
+  deliveries        Delivery[]
+  suppliers         Supplier[]
+  purchaseOrders    PurchaseOrder[]
+  hours             BranchHours[]
+  departments       Department[]
+  shifts            Shift[]
+  attendances       Attendance[]
+  banners           Banner[]
+  forecastSnapshots ForecastSnapshot[]
 
   @@index([managerId])
   @@map("branches")
@@ -301,6 +335,7 @@ model User {
   productReviews           ProductReview[]
   campaignsCreated         Campaign[]
   apiKeysCreated           ApiKey[]
+  aiAssistantQueries       AiAssistantQuery[]
 
   @@index([branchId])
   @@index([departmentId])
@@ -417,6 +452,7 @@ model MenuItem {
   orderItems         OrderItem[]
   recipeIngredients  RecipeIngredient[]
   reviews            ProductReview[]
+  forecastSnapshots  ForecastSnapshot[]
 
   @@index([branchId, categoryId])
   @@index([branchId, isAvailable])
@@ -451,6 +487,11 @@ model InventoryItem {
   currentStock     Decimal       @default(0) @map("current_stock") @db.Decimal(12, 3)
   reorderThreshold Decimal       @default(0) @map("reorder_threshold") @db.Decimal(12, 3)
   unitCost         Int           @map("unit_cost")
+  /// Phase 6 — how many days a fresh restock is expected to stay usable.
+  /// Null for items that don't meaningfully expire (e.g. disposable cups)
+  /// — InventoryIntelligenceService.expiryRisk treats null as "not
+  /// applicable" rather than 0 risk.
+  shelfLifeDays    Int?          @map("shelf_life_days")
   isActive         Boolean       @default(true) @map("is_active")
   createdAt        DateTime      @default(now()) @map("created_at")
   updatedAt        DateTime      @updatedAt @map("updated_at")
@@ -458,6 +499,7 @@ model InventoryItem {
   transactions       InventoryTransaction[]
   recipeIngredients  RecipeIngredient[]
   purchaseOrderLines PurchaseOrderLine[]
+  forecastSnapshots  ForecastSnapshot[]
 
   @@index([branchId])
   @@map("inventory_items")
@@ -1347,4 +1389,87 @@ model ApiKey {
 
   @@index([createdByUserId])
   @@map("api_keys")
+}
+
+// ---------------------------------------------------------------------------
+// Phase 6 — AI & Business Intelligence. Purely additive, same as Phase 5's
+// section above: nothing before this line changes shape.
+//
+// Recommendations, customer intelligence (RFM/LTV/churn), inventory
+// intelligence, and marketing intelligence are deliberately NOT modeled here
+// — they're computed on demand from existing tables (Order/OrderItem/
+// LoyaltyLedger/CouponRedemption/...), the same "on-demand aggregate query"
+// approach AnalyticsService and InventoryService.predictedShortages already
+// use, rather than adding materialized/cached tables for them. Only sales
+// forecasting needs persistence: "forecast vs actual" requires the
+// prediction to outlive the day it was made, and "replaceable/versioned
+// models" requires a registry row to version against.
+// ---------------------------------------------------------------------------
+
+/// One row per forecast-generation run (e.g. "sales-forecast", nightly). A
+/// model here is a hand-rolled statistical method (moving average / linear
+/// regression over Order history — see ForecastingService), not a trained
+/// artifact — `version` still lets an admin see which run a snapshot came
+/// from, and `metrics` holds its offline evaluation (e.g. MAPE against the
+/// trailing window) without needing a separate experiment-tracking system.
+model MlModelRun {
+  id        String        @id @default(uuid())
+  modelKey  String        @map("model_key")
+  version   Int
+  status    MlModelStatus @default(READY)
+  metrics   Json?
+  notes     String?
+  trainedAt DateTime      @default(now()) @map("trained_at")
+
+  forecastSnapshots ForecastSnapshot[]
+
+  @@unique([modelKey, version])
+  @@index([modelKey, trainedAt])
+  @@map("ml_model_runs")
+}
+
+/// One row per (metric, granularity, target period, optional branch/item)
+/// prediction. `actualValue` is backfilled once the period has passed
+/// (ExecutiveService reads both to render forecast-vs-actual) — left null
+/// until then rather than requiring a second write path.
+model ForecastSnapshot {
+  id                String              @id @default(uuid())
+  modelRunId        String              @map("model_run_id")
+  modelRun          MlModelRun          @relation(fields: [modelRunId], references: [id], onDelete: Cascade)
+  metric            ForecastMetric
+  granularity       ForecastGranularity
+  targetPeriodStart DateTime            @map("target_period_start")
+  branchId          String?             @map("branch_id")
+  branch            Branch?             @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  menuItemId        String?             @map("menu_item_id")
+  menuItem          MenuItem?           @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  inventoryItemId   String?             @map("inventory_item_id")
+  inventoryItem     InventoryItem?      @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+  predictedValue    Decimal             @map("predicted_value") @db.Decimal(14, 3)
+  confidence        Decimal             @db.Decimal(4, 3)
+  actualValue       Decimal?            @map("actual_value") @db.Decimal(14, 3)
+  createdAt         DateTime            @default(now()) @map("created_at")
+
+  @@index([metric, granularity, targetPeriodStart])
+  @@index([branchId, metric, targetPeriodStart])
+  @@index([menuItemId, targetPeriodStart])
+  @@index([inventoryItemId, targetPeriodStart])
+  @@map("forecast_snapshots")
+}
+
+/// Audit trail of AI Assistant Q&A — `toolCalls` records which intelligence
+/// service methods were invoked and their raw results, so every answer is
+/// traceable back to the real data it cites (never a bare LLM claim).
+model AiAssistantQuery {
+  id            String         @id @default(uuid())
+  askedByUserId String?        @map("asked_by_user_id")
+  askedByUser   User?          @relation(fields: [askedByUserId], references: [id])
+  question      String
+  answer        String
+  toolCalls     Json?          @map("tool_calls")
+  outcome       AiQueryOutcome
+  createdAt     DateTime       @default(now()) @map("created_at")
+
+  @@index([askedByUserId, createdAt])
+  @@map("ai_assistant_queries")
 }
