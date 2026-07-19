@@ -23,7 +23,11 @@ export class SalesAgent implements DomainAgent {
 
   constructor(private readonly salesAi: SalesAiService) {}
 
-  async answer(_actor: RequestUser, branchId: string | undefined): Promise<AgentAnswer> {
+  async answer(
+    _actor: RequestUser,
+    branchId: string | undefined,
+    _question?: string,
+  ): Promise<AgentAnswer> {
     const [demand, bestSellers, peakHour] = await Promise.all([
       this.salesAi.demandForecast(branchId),
       this.salesAi.bestSellerPrediction(branchId),

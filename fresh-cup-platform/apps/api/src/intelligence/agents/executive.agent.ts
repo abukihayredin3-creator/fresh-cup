@@ -22,7 +22,11 @@ export class ExecutiveAgent implements DomainAgent {
 
   constructor(private readonly executiveAi: ExecutiveAiService) {}
 
-  async answer(actor: RequestUser, branchId: string | undefined): Promise<AgentAnswer> {
+  async answer(
+    actor: RequestUser,
+    branchId: string | undefined,
+    _question?: string,
+  ): Promise<AgentAnswer> {
     const [daily, risks] = await Promise.all([
       this.executiveAi.dailySummary(actor, branchId),
       this.executiveAi.riskDetection(actor, branchId),

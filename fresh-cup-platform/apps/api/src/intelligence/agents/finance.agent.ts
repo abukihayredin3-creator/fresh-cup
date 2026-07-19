@@ -32,7 +32,11 @@ export class FinanceAgent implements DomainAgent {
 
   constructor(private readonly executiveAi: ExecutiveAiService) {}
 
-  async answer(actor: RequestUser, branchId: string | undefined): Promise<AgentAnswer> {
+  async answer(
+    actor: RequestUser,
+    branchId: string | undefined,
+    _question?: string,
+  ): Promise<AgentAnswer> {
     const [revenue, growth] = await Promise.all([
       this.executiveAi.revenueExplanation(actor, branchId),
       this.executiveAi.growthOpportunities(actor),

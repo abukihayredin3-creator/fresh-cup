@@ -13,7 +13,11 @@ export class DeliveryAgent implements DomainAgent {
 
   constructor(private readonly deliveryAi: DeliveryAiService) {}
 
-  async answer(_actor: RequestUser, branchId: string | undefined): Promise<AgentAnswer> {
+  async answer(
+    _actor: RequestUser,
+    branchId: string | undefined,
+    _question?: string,
+  ): Promise<AgentAnswer> {
     const [delays, zones] = await Promise.all([
       this.deliveryAi.delayDetection(branchId),
       this.deliveryAi.zoneOptimization(branchId),

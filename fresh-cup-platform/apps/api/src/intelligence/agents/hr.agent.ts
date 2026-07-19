@@ -23,7 +23,11 @@ export class HrAgent implements DomainAgent {
 
   constructor(private readonly workforceAi: WorkforceAiService) {}
 
-  async answer(_actor: RequestUser, branchId: string | undefined): Promise<AgentAnswer> {
+  async answer(
+    _actor: RequestUser,
+    branchId: string | undefined,
+    _question?: string,
+  ): Promise<AgentAnswer> {
     const [scheduling, attendance] = await Promise.all([
       this.workforceAi.schedulingInsights(branchId),
       this.workforceAi.attendanceAnomalies(branchId),

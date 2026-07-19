@@ -22,7 +22,7 @@ export class MarketingAgent implements DomainAgent {
 
   constructor(private readonly marketingAi: MarketingAiService) {}
 
-  async answer(actor: RequestUser): Promise<AgentAnswer> {
+  async answer(actor: RequestUser, _branchId?: string, _question?: string): Promise<AgentAnswer> {
     const [campaigns, coupons] = await Promise.all([
       this.marketingAi.campaignRecommendations(actor),
       this.marketingAi.couponOptimization(),

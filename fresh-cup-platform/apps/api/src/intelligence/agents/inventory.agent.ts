@@ -22,7 +22,11 @@ export class InventoryAgent implements DomainAgent {
 
   constructor(private readonly inventoryAi: InventoryAiService) {}
 
-  async answer(_actor: RequestUser, branchId: string | undefined): Promise<AgentAnswer> {
+  async answer(
+    _actor: RequestUser,
+    branchId: string | undefined,
+    _question?: string,
+  ): Promise<AgentAnswer> {
     const [restocking, waste] = await Promise.all([
       this.inventoryAi.restockingRecommendations(branchId),
       this.inventoryAi.wastePrediction(branchId),

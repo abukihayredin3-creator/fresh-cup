@@ -21,7 +21,11 @@ export class KitchenAgent implements DomainAgent {
 
   constructor(private readonly kitchenAi: KitchenAiService) {}
 
-  async answer(_actor: RequestUser, branchId: string | undefined): Promise<AgentAnswer> {
+  async answer(
+    _actor: RequestUser,
+    branchId: string | undefined,
+    _question?: string,
+  ): Promise<AgentAnswer> {
     const [bottlenecks, workload] = await Promise.all([
       this.kitchenAi.prepBottlenecks(branchId),
       this.kitchenAi.stationWorkload(branchId),
