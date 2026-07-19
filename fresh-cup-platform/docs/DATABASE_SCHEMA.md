@@ -536,7 +536,7 @@ provider since Phase 2.
 Purely additive — nothing above this section changes shape. Recommendations,
 customer intelligence, inventory intelligence, and marketing intelligence
 are all computed on demand from tables Phases 1-5 already own (same
-on-demand-aggregate approach as section 17's Analytics); only forecasting
+on-demand-aggregate approach as section 18's Analytics); only forecasting
 persists anything, because "forecast vs. actual" requires a prediction to
 outlive the day it was made, and "replaceable/versioned models" requires a
 registry row to version against.
@@ -573,7 +573,7 @@ traceable back to the real data it cites — never a bare LLM claim.
 
 | id, asked_by_user_id FK NULL, question, answer, tool_calls jsonb NULL, outcome (`answered`,`fallback`,`error`), created_at |
 
-## 16. Restaurant Intelligence Platform (Phase 11)
+## 16. Restaurant Intelligence Platform (Phase 11 Part 1)
 
 Purely additive on top of section 15 — nothing above changes shape, and
 Phase 6's three tables stay exactly as they are. `apps/api/src/intelligence`
@@ -606,7 +606,38 @@ or write this table.
 
 | id, namespace, content NULL, metadata jsonb NULL, embedding double precision[], created_at, updated_at | index (namespace) |
 
-## 17. Analytics
+## 17. Predictive Intelligence Platform (Phase 11 Part 2)
+
+Purely additive on top of section 16 — nothing above changes shape, and
+Phase 6's `ml_model_runs`/`forecast_snapshots` stay exactly as they are.
+Every prediction/forecast/segmentation computation itself stays on-demand
+(same convention as sections 15/16); only the model registry and drift
+alerts persist anything new.
+
+### `predictive_model_runs`
+
+A second, richer registry from Phase 6's `ml_model_runs` — this one
+tracks every model in `prediction/`, `forecasting/`, and `segmentation/`,
+with a deployment-stage lifecycle and dataset lineage Phase 6's
+forecast-only registry never needed. `deployment_stage` defaults to
+`experimental`; promoting a run to `production`
+(`ModelRegistryV2Service.promote()`) automatically demotes the prior
+`production` run for the same `model_key` to `archived`, so at most one
+run per model is ever live at a time.
+
+| id, model_key, version, status (`ready`,`failed`), deployment_stage (`experimental`,`staging`,`production`,`archived`), dataset_hash, dataset_version, sample_count, feature_schema jsonb, metrics jsonb NULL, notes NULL, trained_at | unique (model_key, version); index (model_key, deployment_stage) |
+
+### `drift_alerts`
+
+One row per detected drift event — feature, prediction, data (volume), or
+concept (accuracy) drift — written by `DriftDetectionService` only when a
+shift crosses the standard PSI significance thresholds (a "stable"
+comparison never writes a row). `resolved_at` is set by
+`POST /admin/ai/drift/:id/resolve`; left `NULL` until then.
+
+| id, model_key, drift_type (`feature_drift`,`prediction_drift`,`data_drift`,`concept_drift`), severity (`low`,`medium`,`high`), metric_name, baseline_value, current_value, detail, detected_at, resolved_at NULL | index (model_key, detected_at); index (resolved_at) |
+
+## 18. Analytics
 
 Implemented in Phase 3 as on-demand aggregate queries against the live
 `orders`/`order_items` tables — deliberately not materialized views or a
@@ -631,7 +662,7 @@ If order-history volume ever makes these queries too slow, Phase 8
 same "don't build ahead of the need" reasoning as Phase 3's on-demand
 approach in the first place.
 
-## 18. Indexing notes
+## 19. Indexing notes
 
 - `orders(branch_id, status, created_at)` — kitchen queue & admin order list
 - `orders(user_id, created_at)` — customer order history
@@ -648,7 +679,7 @@ approach in the first place.
 - `audit_logs(entity_type, entity_id)`, `audit_logs(actor_user_id, created_at)` — audit-log lookups by entity or by actor (Phase 3)
 - Partition `orders` and `delivery_tracking_pings` by month once volume warrants it (Phase 9)
 
-## 19. Sample DDL sketch (illustrative, not exhaustive)
+## 20. Sample DDL sketch (illustrative, not exhaustive)
 
 ```sql
 create type order_status as enum (

@@ -9,6 +9,7 @@ const SECTIONS = [
   { id: "/intelligence/customers", label: "Customer AI" },
   { id: "/intelligence/inventory", label: "Inventory AI" },
   { id: "/intelligence/marketing", label: "Marketing AI" },
+  { id: "/intelligence/predictive", label: "Predictive Intelligence" },
   { id: "/intelligence/recommendations", label: "Recommendations" },
   { id: "/intelligence/assistant", label: "AI Assistant" },
 ];

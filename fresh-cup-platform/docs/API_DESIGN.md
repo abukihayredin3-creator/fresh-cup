@@ -520,7 +520,7 @@ to `AiAssistantQuery` (question, answer, which tools were called with what
 result, and an `outcome` of `ANSWERED`/`FALLBACK`/`ERROR`) so every answer
 is traceable back to the real data it cites.
 
-## Restaurant Intelligence Platform (Phase 11)
+## Restaurant Intelligence Platform (Phase 11 Part 1)
 
 `manager`/`admin` only unless noted — same additional-role pattern as
 Phase 6 (Inventory AI also allows `INVENTORY_STAFF`, Marketing AI also
@@ -588,6 +588,40 @@ question asking for API keys/passwords/secrets/JWTs/system prompts before
 it reaches an LLM or tool, and `SecretRedactionInterceptor` scrubs
 secret-shaped substrings from every response body in this section as a
 second layer of defense.
+
+## Predictive Intelligence Platform (Phase 11 Part 2)
+
+`manager`/`admin` only (`/admin/ai/retrain` is `admin`-only — it does real
+work and writes a registry version). Every response is a
+`PredictionResultDto` (or an array of them) — `{ modelKey, modelVersion,
+prediction, confidence, topReasons, contributingFactors, suggestedAction
+}` — never a bare number. Part 2's spec also lists `/ai/customers`,
+`/ai/sales`, `/ai/inventory`, `/ai/workforce`, `/ai/delivery`,
+`/ai/marketing` as top-level AI API groups; those are the Part 1 routes
+in the section above and aren't duplicated here.
+
+| Method | Path                                            | Notes                                                                                                 |
+| ------ | ----------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| GET    | `/admin/ai/predictions/customer/{userId}`       | all 8 customer-intelligence predictions for one customer in one call                                  |
+| GET    | `/admin/ai/forecast/hourly-sales`               | wraps `ForecastMetric.HOURLY_DEMAND`                                                                  |
+| GET    | `/admin/ai/forecast/daily-sales`                | wraps `ForecastMetric.SALES_REVENUE`, `DAILY`                                                         |
+| GET    | `/admin/ai/forecast/weekly-sales`               | `WEEKLY` granularity                                                                                  |
+| GET    | `/admin/ai/forecast/monthly-sales`              | `MONTHLY` granularity                                                                                 |
+| GET    | `/admin/ai/forecast/revenue`                    | alias of daily-sales, named for the spec's "Revenue" forecast                                         |
+| GET    | `/admin/ai/forecast/transactions`               | wraps `ForecastMetric.SALES_ORDERS`                                                                   |
+| GET    | `/admin/ai/forecast/average-ticket`             | wraps Part 1's `SalesAiService.averageTicketPrediction`                                               |
+| GET    | `/admin/ai/forecast/best-sellers`               | wraps Part 1's `SalesAiService.bestSellerPrediction`                                                  |
+| GET    | `/admin/ai/forecast/category-trends`            | net-new: per-product demand forecast grouped by menu category, ranked+trended                         |
+| GET    | `/admin/ai/models`                              | list predictive-model registry runs; optional `?modelKey=`                                            |
+| GET    | `/admin/ai/models/stage/{stage}`                | runs currently at a deployment stage                                                                  |
+| POST   | `/admin/ai/models/{modelKey}/{version}/promote` | `admin` only; body `{ stage }` — promoting to `PRODUCTION` auto-archives the previous one             |
+| GET    | `/admin/ai/retrain/check/{modelKey}`            | whether a model needs retraining, and why, without retraining it                                      |
+| POST   | `/admin/ai/retrain/{modelKey}`                  | manually retrain one model now                                                                        |
+| POST   | `/admin/ai/retrain`                             | check every trainable model and retrain any that need it, instead of waiting for the nightly 4 AM job |
+| GET    | `/admin/ai/drift`                               | list drift alerts; optional `?modelKey=&unresolvedOnly=true`                                          |
+| POST   | `/admin/ai/drift/{id}/resolve`                  | mark a drift alert resolved                                                                           |
+| GET    | `/admin/ai/segmentation`                        | cluster customers; `?branchId=&strategy=rule-based\|kmeans` (default rule-based)                      |
+| GET    | `/admin/ai/segmentation/summary`                | customer counts per segment                                                                           |
 
 ## Audit logs (Phase 3)
 

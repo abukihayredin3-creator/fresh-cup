@@ -362,7 +362,9 @@ breaking migration once real orders/customers exist.
   that Phase 4 shipped a client that actually registers device tokens
 - **Exit criteria:** repeat customers can redeem points for a reward; marketing can run a scheduled coupon campaign without engineering involvement
 
-## Phase 11 — Restaurant Intelligence Platform (Part 1: provider-agnostic LLM/RAG layer) ✅
+## Phase 11 — Restaurant Intelligence Platform ✅
+
+### Part 1: provider-agnostic LLM/RAG layer
 
 - New `apps/api/src/intelligence/` — a second, sibling AI tree alongside
   Phase 6's `modules/intelligence`, not a replacement or rewrite of it.
@@ -443,6 +445,115 @@ breaking migration once real orders/customers exist.
   AI domains are organized and callable end-to-end against real Prisma
   data, configuration is documented, and the full existing test suite —
   Phases 1–6 included — still passes untouched
+
+### Part 2: Predictive Intelligence Platform
+
+- Nine new subtrees under `apps/api/src/intelligence/` — `features/`,
+  `registry/`, `models/`, `evaluation/`, `calibration/`, `drift/`,
+  `segmentation/`, `prediction/`, `training/` — plus a `forecasting/`
+  facade, none of them touching Part 1's or Phase 6's files except two
+  purely additive edits: `IntelligenceModule` already exported its
+  services for Part 1 to consume, and `AiIntelligenceModule`'s
+  controller/provider arrays gained new entries alongside the existing
+  ones
+- **Feature Store** (`features/FeatureStoreService`) — one place computes
+  customer (visit frequency, AOV, days since last visit, favorite-category
+  count, loyalty level), sales (weekday/month/holiday flag/a documented
+  `weatherPlaceholder: null`/active-promotions count), inventory
+  (consumption trend slope, supplier lead time, waste %), kitchen (avg
+  prep time, station load), delivery (avg ETA, driver utilization), and
+  marketing (coupon usage rate, referral conversion, campaign ROI)
+  features — delegating to Phase 6/Part 1 services wherever they already
+  compute the number, querying Prisma directly only for numbers no
+  existing service exposes (e.g. the consumption-trend slope)
+- **Model Registry v2** (`registry/ModelRegistryV2Service`, a new
+  `predictive_model_runs` table) — distinct from Phase 6's
+  forecast-only `MlModelRun`: auto-incrementing version per `modelKey`,
+  a `PredictiveModelStage` lifecycle (Experimental → Staging →
+  Production → Archived, promoting to Production auto-archives the
+  previous one), and dataset lineage (hash/version/sample count/feature
+  schema) every run records
+- **Explainable predictions** (`prediction/CustomerPredictionService`) —
+  8 models (lifetime value, repeat-purchase probability, churn, upsell,
+  cross-sell, coupon response, referral probability, satisfaction), each
+  returning a `PredictionResultDto` (`prediction`, calibrated
+  `confidence`, `topReasons`, `contributingFactors`, `suggestedAction`) —
+  never an unexplained number. Lifetime value reuses Phase 6's real LTV
+  formula directly; the other 7 share one hand-tuned, documented
+  weighted-feature scoring pipeline (`models/feature-scoring.util.ts`:
+  dot product through a sigmoid — the same "no Python ML service"
+  transparency as Phase 6's hand-rolled statistics, not a claim of
+  gradient-descent-fit coefficients) so every "top reason" falls out of
+  the same computation that produced the score
+- **Forecasting facade** (`forecasting/ForecastingFacadeService`) — wraps
+  Phase 6's `ForecastingService` and Part 1's `SalesAiService` into the
+  same `PredictionResultDto` shape (hourly/daily/weekly/monthly sales,
+  revenue, transactions, average ticket, best sellers); `categoryTrends`
+  is the one genuinely new capability, grouping Phase 6's per-product
+  demand forecast by menu category
+- **Confidence calibration** (`calibration/ConfidenceCalibratorService`)
+  — a reliability-diagram-based calibrator: `normalize()` clamps any raw
+  score into [0.05, 0.95]; `calibrate()` replaces a raw score with its
+  bin's empirical actual-rate once enough (predicted, actual) history
+  exists (`evaluation/metrics.util.ts`'s `calibrationCurve`);
+  `rejectLowConfidence()` filters recommendations below a threshold
+  rather than ever pushing a low-confidence guess
+- **Drift detection** (`drift/DriftDetectionService`, a new
+  `drift_alerts` table) — Population Stability Index (hand-rolled,
+  dependency-free) for feature drift and prediction drift; relative
+  volume change for data drift; accuracy drop for concept drift.
+  Persists an alert (with severity) only when a shift crosses the
+  standard PSI significance thresholds — surfaced at `GET /admin/ai/drift`
+- **Evaluation metrics** (`evaluation/metrics.util.ts`) — precision,
+  recall, F1, ROC AUC (via the Mann-Whitney U statistic — no threshold
+  sweep needed), MAPE, RMSE, MAE, confusion matrix, and the calibration
+  curve calibration itself is built from — every metric hand-rolled and
+  dependency-free, same convention as everything else in this module
+- **Automatic retraining** (`training/RetrainingService` +
+  `RetrainingScheduler`, nightly at 4 AM — after Phase 6's 2 AM forecast
+  job and Part 1's 3 AM digest) — triggers on unresolved drift alerts, a
+  new-orders-since-last-training threshold, or a manual request; for
+  `sales-*` models it also calls Phase 6's
+  `ForecastingService.regenerateAll()` (reused, not reimplemented); every
+  retrain — including the hand-weighted customer models, which don't
+  refit coefficients — records a new versioned registry row with a fresh
+  dataset hash/version/sample count, so "what data was this validated
+  against" is always answerable
+- **Configurable customer segmentation** (`segmentation/`) — a
+  `ClusteringStrategy` interface with two implementations: `rule-based`
+  (default, deterministic RFM-threshold rules) and `kmeans` (a genuine,
+  deterministically-seeded Lloyd's-algorithm implementation over
+  normalized recency/frequency/monetary features — no RNG, so the same
+  input always clusters the same way). Both map to a different 7-label
+  taxonomy than Phase 6's own RFM segments (High Value/VIP/Occasional/
+  New/Dormant/At Risk/Lost vs. Phase 6's Champions/Loyal/New/At Risk/Need
+  Attention/Lost) since they answer a different question — this is
+  additive, not a replacement
+- **New AI API surfaces** — `/admin/ai/predictions`, `/admin/ai/forecast`,
+  `/admin/ai/models`, `/admin/ai/retrain` (admin-only — it does real work
+  and writes a registry version), `/admin/ai/drift`, and
+  `/admin/ai/segmentation`, alongside Part 1's existing
+  `/admin/ai/{executive,sales,customer,inventory,kitchen,delivery,
+marketing,workforce,memory,assistant}` routes, all untouched — Part 2's
+  spec also lists `/ai/customers`, `/ai/sales`, `/ai/inventory`,
+  `/ai/workforce`, `/ai/delivery`, `/ai/marketing`, which Part 1 already
+  built; Part 2 doesn't duplicate them
+- 195 new tests (43 suites) covering the feature store, registry,
+  scoring/evaluation utilities, calibration, drift detection, both
+  clustering strategies, all 8 predictions, the forecast facade, and the
+  retraining pipeline/scheduler — 419 tests total across the whole API
+  suite, typecheck/lint clean, and a full Nest app boot verifying every
+  new provider resolves in the DI graph
+- No `apps/admin` UI changes in the backend checkpoint above — see the
+  "Predictive Intelligence" admin dashboard tab shipped alongside this
+  section
+- **Exit criteria (Part 2):** the feature store, model registry, 8
+  explainable predictions, unified forecasting facade, configurable
+  segmentation, calibration, drift detection, and automatic retraining
+  are all implemented and exercised by real Prisma data; every prediction
+  is confidence-scored and explained; the admin dashboard surfaces model
+  status/versions/drift alerts/predictions; the full test suite —
+  Phases 1–6 and Phase 11 Part 1 included — still passes untouched
 
 ## Sequencing notes
 

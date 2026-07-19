@@ -1,8 +1,10 @@
 import type {
+  ClusteringStrategyName,
   DateRangeParams,
   ForecastGranularity,
   ForecastMetric,
   ListSegmentsParams,
+  PredictiveModelStage,
 } from "@fresh-cup/types";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./api-client";
@@ -163,5 +165,110 @@ export function useAskAssistant() {
   return useMutation({
     mutationFn: ({ question, branchId }: { question: string; branchId?: string }) =>
       api.admin.intelligence.askAssistant(question, branchId),
+  });
+}
+
+// --- Phase 11 Part 2 — Predictive Intelligence Platform ---
+
+export function useCustomerPredictions(userId: string | null) {
+  return useQuery({
+    queryKey: ["admin-customer-predictions", userId],
+    queryFn: () => api.admin.intelligence.customerPredictions(userId as string),
+    enabled: Boolean(userId),
+  });
+}
+
+export function useAiCategoryTrendsForecast(branchId: string | undefined) {
+  return useQuery({
+    queryKey: ["admin-ai-category-trends-forecast", branchId],
+    queryFn: () => api.admin.intelligence.aiCategoryTrendsForecast(branchId),
+  });
+}
+
+export function useAiBestSellersForecast(branchId: string | undefined) {
+  return useQuery({
+    queryKey: ["admin-ai-best-sellers-forecast", branchId],
+    queryFn: () => api.admin.intelligence.aiBestSellersForecast(branchId),
+  });
+}
+
+export function useAiRevenueForecast(branchId: string | undefined) {
+  return useQuery({
+    queryKey: ["admin-ai-revenue-forecast", branchId],
+    queryFn: () => api.admin.intelligence.aiRevenueForecast(branchId),
+  });
+}
+
+export function useModelRegistryRuns(modelKey?: string) {
+  return useQuery({
+    queryKey: ["admin-model-registry-runs", modelKey],
+    queryFn: () => api.admin.intelligence.modelRegistryRuns(modelKey),
+  });
+}
+
+export function usePromoteModel() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      modelKey,
+      version,
+      stage,
+    }: {
+      modelKey: string;
+      version: number;
+      stage: PredictiveModelStage;
+    }) => api.admin.intelligence.promoteModel(modelKey, version, stage),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["admin-model-registry-runs"] });
+    },
+  });
+}
+
+export function useDriftAlerts(modelKey?: string, unresolvedOnly?: boolean) {
+  return useQuery({
+    queryKey: ["admin-drift-alerts", modelKey, unresolvedOnly],
+    queryFn: () => api.admin.intelligence.driftAlerts(modelKey, unresolvedOnly),
+  });
+}
+
+export function useResolveDriftAlert() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.admin.intelligence.resolveDriftAlert(id),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["admin-drift-alerts"] });
+    },
+  });
+}
+
+export function useRetrainAllDue() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.admin.intelligence.retrainAllDue(),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["admin-model-registry-runs"] });
+      void queryClient.invalidateQueries({ queryKey: ["admin-drift-alerts"] });
+    },
+  });
+}
+
+export function useRetrainModel() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (modelKey: string) => api.admin.intelligence.retrainModel(modelKey),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["admin-model-registry-runs"] });
+      void queryClient.invalidateQueries({ queryKey: ["admin-drift-alerts"] });
+    },
+  });
+}
+
+export function usePredictiveSegmentationSummary(
+  branchId: string | undefined,
+  strategy: ClusteringStrategyName = "rule-based",
+) {
+  return useQuery({
+    queryKey: ["admin-predictive-segmentation-summary", branchId, strategy],
+    queryFn: () => api.admin.intelligence.predictiveSegmentationSummary(branchId, strategy),
   });
 }

@@ -297,3 +297,102 @@ export interface AiAssistantResponse {
   outcome: "ANSWERED" | "FALLBACK" | "ERROR";
   toolCalls: AiAssistantToolCall[];
 }
+
+// --- Phase 11 Part 2 — Predictive Intelligence Platform ---
+// Mirrors apps/api's intelligence/ tree (a sibling to modules/intelligence
+// above); see docs/API_DESIGN.md's Phase 11 Part 2 section for the endpoint
+// catalog.
+
+export interface FeatureContribution {
+  feature: string;
+  value: number;
+  weight: number;
+  contribution: number;
+  direction: "positive" | "negative";
+}
+
+/** Every prediction in the platform returns this shape — never a bare number. */
+export interface PredictionResult<T = number> {
+  modelKey: string;
+  modelVersion: number;
+  prediction: T;
+  /** 0-1, calibrated. */
+  confidence: number;
+  topReasons: string[];
+  contributingFactors: FeatureContribution[];
+  suggestedAction: string;
+}
+
+export interface CustomerPredictions {
+  clv: PredictionResult;
+  repeatPurchase: PredictionResult;
+  churn: PredictionResult;
+  upsell: PredictionResult;
+  crossSell: PredictionResult;
+  couponResponse: PredictionResult;
+  referral: PredictionResult;
+  satisfaction: PredictionResult;
+}
+
+export type BestSellerPrediction = PredictionResult<{ nameEn: string; totalPredicted: number }[]>;
+
+export type CategoryTrendPrediction = PredictionResult<
+  { category: string; totalPredicted: number; trend: "rising" | "falling" | "flat" }[]
+>;
+
+export type PredictiveModelStage = "EXPERIMENTAL" | "STAGING" | "PRODUCTION" | "ARCHIVED";
+
+export interface PredictiveModelRun {
+  id: string;
+  modelKey: string;
+  version: number;
+  status: "READY" | "FAILED";
+  deploymentStage: PredictiveModelStage;
+  datasetHash: string;
+  datasetVersion: string;
+  sampleCount: number;
+  featureSchema: Record<string, unknown>;
+  metrics: Record<string, unknown> | null;
+  notes: string | null;
+  trainedAt: string;
+}
+
+export type DriftType = "FEATURE_DRIFT" | "PREDICTION_DRIFT" | "DATA_DRIFT" | "CONCEPT_DRIFT";
+export type DriftSeverity = "LOW" | "MEDIUM" | "HIGH";
+
+export interface DriftAlert {
+  id: string;
+  modelKey: string;
+  driftType: DriftType;
+  severity: DriftSeverity;
+  metricName: string;
+  baselineValue: number;
+  currentValue: number;
+  detail: string;
+  detectedAt: string;
+  resolvedAt: string | null;
+}
+
+export type RetrainTrigger = "drift" | "performance" | "new_data" | "manual";
+
+export interface TriggerCheckResult {
+  modelKey: string;
+  shouldRetrain: boolean;
+  reasons: RetrainTrigger[];
+}
+
+export type ClusteringStrategyName = "rule-based" | "kmeans";
+
+export type SegmentLabel =
+  "VIP" | "High Value" | "Occasional" | "New" | "Dormant" | "At Risk" | "Lost";
+
+export interface ClusterAssignment {
+  userId: string;
+  fullName: string;
+  segment: SegmentLabel;
+}
+
+export interface PredictiveSegmentSummaryEntry {
+  segment: string;
+  customerCount: number;
+}

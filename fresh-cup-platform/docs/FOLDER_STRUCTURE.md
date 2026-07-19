@@ -26,20 +26,31 @@ fresh-cup-platform/
 │   │   │   ├── intelligence/       # Phase 11 — Restaurant Intelligence Platform (sibling
 │   │   │   │   │                   #   tree to modules/intelligence above, wraps it rather
 │   │   │   │   │                   #   than replacing it)
-│   │   │   │   ├── controllers/    # one per AI domain + memory + assistant
+│   │   │   │   ├── controllers/    # one per AI domain + memory + assistant + Part 2 surfaces
+│   │   │   │   │                   #   (predictions, forecast, models, retrain, drift, segmentation)
 │   │   │   │   ├── services/       # executive/sales/customer/inventory/marketing/kitchen/
 │   │   │   │   │                   #   delivery/workforce AI, agent-runner, explanation, security
-│   │   │   │   ├── llm/            # LlmProvider interface + factory + providers/
-│   │   │   │   ├── embeddings/     # EmbeddingProvider interface + factory + providers/
-│   │   │   │   ├── vector/         # VectorProvider interface + factory + providers/
-│   │   │   │   ├── rag/            # RagService (embed + index + retrieve)
-│   │   │   │   ├── memory/         # AiMemoryService (long-term AI memory)
-│   │   │   │   ├── scheduler/      # nightly daily-digest job
-│   │   │   │   ├── workers/        # embedding backfill
-│   │   │   │   ├── prompts/        # system prompts, prompt sanitizer
-│   │   │   │   ├── tools/          # tool-registry types shared by agent-runner/assistant
-│   │   │   │   ├── guards/         # AiAuthorizationGuard (irreversible-action protection)
-│   │   │   │   ├── interceptors/   # SecretRedactionInterceptor
+│   │   │   │   ├── llm/            # LlmProvider interface + factory + providers/ (Part 1)
+│   │   │   │   ├── embeddings/     # EmbeddingProvider interface + factory + providers/ (Part 1)
+│   │   │   │   ├── vector/         # VectorProvider interface + factory + providers/ (Part 1)
+│   │   │   │   ├── rag/            # RagService (embed + index + retrieve) (Part 1)
+│   │   │   │   ├── memory/         # AiMemoryService (long-term AI memory) (Part 1)
+│   │   │   │   ├── scheduler/      # nightly daily-digest job (Part 1)
+│   │   │   │   ├── workers/        # embedding backfill (Part 1)
+│   │   │   │   ├── prompts/        # system prompts, prompt sanitizer (Part 1)
+│   │   │   │   ├── tools/          # tool-registry types shared by agent-runner/assistant (Part 1)
+│   │   │   │   ├── guards/         # AiAuthorizationGuard (irreversible-action protection) (Part 1)
+│   │   │   │   ├── interceptors/   # SecretRedactionInterceptor (Part 1)
+│   │   │   │   ├── features/       # Phase 11 Part 2 — FeatureStoreService, reusable feature vectors
+│   │   │   │   ├── registry/       # Part 2 — ModelRegistryV2Service (deployment-stage lifecycle)
+│   │   │   │   ├── models/         # Part 2 — feature-scoring.util.ts (weighted-sum + sigmoid)
+│   │   │   │   ├── evaluation/     # Part 2 — metrics.util.ts (precision/recall/F1/ROC AUC/MAPE/RMSE/MAE)
+│   │   │   │   ├── calibration/    # Part 2 — ConfidenceCalibratorService
+│   │   │   │   ├── drift/          # Part 2 — DriftDetectionService (PSI-based)
+│   │   │   │   ├── segmentation/   # Part 2 — ClusteringStrategy (rule-based + kmeans)
+│   │   │   │   ├── prediction/     # Part 2 — CustomerPredictionService (8 explainable models)
+│   │   │   │   ├── forecasting/    # Part 2 — ForecastingFacadeService
+│   │   │   │   ├── training/       # Part 2 — RetrainingService + RetrainingScheduler
 │   │   │   │   ├── dto/, entities/, events/, utils/
 │   │   │   │   └── ai-intelligence.module.ts
 │   │   │   ├── common/             # guards, interceptors, pipes, decorators

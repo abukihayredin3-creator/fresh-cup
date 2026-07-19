@@ -258,6 +258,73 @@ end, with tools that delegate to the domain AI services above rather than
 duplicating their logic. Phase 6's `AiAssistantService` is untouched and
 keeps its own Claude-only tool set.
 
+### 6c. Predictive Intelligence Platform (Phase 11 Part 2)
+
+Built on top of §6b's tree, still without a Python ML service or a
+trained-artifact pipeline anywhere in the stack — the "predictive" layer
+is a disciplined arrangement of hand-rolled statistics (§6a's tradition)
+behind a genuine MLOps-shaped interface: a feature store, a versioned
+model registry with a deployment-stage lifecycle, calibrated confidence,
+drift detection, and automatic retraining. Every prediction returns the
+same `PredictionResultDto` — a value, a calibrated confidence, the
+top contributing factors, and a recommended action — because Core
+Principle 2/3 from this phase's spec (explain everything, confidence-score
+everything) is enforced structurally, not by convention.
+
+**Feature store → scoring → calibration pipeline.** `FeatureStoreService`
+computes reusable numeric feature vectors per entity (customer, sales-day,
+inventory item, kitchen station, delivery zone, marketing snapshot),
+delegating to whichever Phase 6/Part 1 service already computes a given
+number rather than re-deriving it. `CustomerPredictionService`'s 7
+classification-style models (repeat purchase, churn, upsell, cross-sell,
+coupon response, referral, satisfaction) share one hand-tuned linear-model
+pipeline (`models/feature-scoring.util.ts`: a documented weight vector
+dotted with the feature vector, through a sigmoid) — explicitly not fit by
+gradient descent, same transparency as everywhere else in this codebase —
+so every "top reason" is a real term from the same computation that
+produced the score, never a post-hoc guess. Lifetime value is the
+exception: it reuses Phase 6's real LTV formula directly (a genuine
+regression, not a classification score) and explains itself by decomposing
+that formula's own inputs. `ConfidenceCalibratorService` sits downstream
+of every score: `normalize()` clamps into a sane range with no history
+required, `calibrate()` replaces a raw score with its calibration bin's
+empirical actual-rate once enough (predicted, actual) history exists
+(`evaluation/metrics.util.ts`'s reliability-diagram-style
+`calibrationCurve`), and `rejectLowConfidence()` filters out anything
+below a threshold rather than surfacing a low-confidence guess.
+
+**Model registry & retraining.** `ModelRegistryV2Service` (a new
+`predictive_model_runs` table, distinct from Phase 6's forecast-only
+`MlModelRun`) auto-increments a version per `modelKey` and tracks a
+`PredictiveModelStage` (Experimental → Staging → Production → Archived —
+promoting to Production auto-archives the previous one) plus dataset
+lineage (hash/version/sample count/feature schema) on every run.
+`RetrainingService` decides _whether_ to retrain (an unresolved drift
+alert, enough new orders since the last training run, or a manual
+request) and `RetrainingScheduler` runs that check nightly at 4 AM — after
+Phase 6's 2 AM forecast job and Part 1's 3 AM digest. For `sales-*`
+models, retraining calls Phase 6's `ForecastingService.regenerateAll()`
+(reused, never reimplemented); every model — including the hand-weighted
+ones that don't refit coefficients — gets a fresh registry row recording
+what dataset the current live model was last validated against.
+
+**Drift detection.** `DriftDetectionService` implements the Population
+Stability Index by hand (bucket two distributions, compare
+proportions) for feature drift and prediction drift, a relative-volume
+check for data drift, and an accuracy-drop check for concept drift —
+persisting a `DriftAlert` (with severity) only when a shift crosses the
+standard PSI significance thresholds (>0.1 moderate, >0.25 significant).
+
+**Configurable segmentation.** `segmentation/` defines a
+`ClusteringStrategy` interface with two implementations selectable by
+name: `rule-based` (default, deterministic RFM-threshold rules against
+the live population, same "no heavy dependency" judgment call as Phase 6)
+and `kmeans` (a genuine, deterministically-seeded Lloyd's-algorithm
+implementation — no RNG, so results are reproducible). Both map to a
+7-label taxonomy (High Value/VIP/Occasional/New/Dormant/At Risk/Lost)
+that's deliberately distinct from Phase 6's own 6-label RFM segments —
+different question, additive rather than a replacement.
+
 ## 7. API architecture
 
 Full detail in [`API_DESIGN.md`](API_DESIGN.md). Summary:

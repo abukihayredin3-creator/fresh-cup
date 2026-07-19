@@ -8,7 +8,7 @@ admin dashboard, customer portal, delivery dashboard, loyalty system, QR
 menu, inventory management, and analytics — built as one coherent system
 rather than disconnected projects.
 
-> **Status:** Phase 11 (Part 1) complete — `apps/api` implements auth/RBAC,
+> **Status:** Phase 11 (Parts 1 & 2) complete — `apps/api` implements auth/RBAC,
 > catalog, inventory (Phase 1), the full ordering engine — cart, checkout,
 > payments, coupons, loyalty, real-time order updates (Phase 2) — the
 > restaurant operations platform — kitchen display, delivery/driver
@@ -31,8 +31,15 @@ rather than disconnected projects.
 > provider layer (Anthropic/OpenAI/Azure/OpenRouter/Ollama/Gemini;
 > zero-dependency defaults for local dev), long-term AI memory, and 8 AI
 > domains — Executive/Sales/Customer/Inventory/Marketing (wrapping Phase 6)
-> plus net-new Kitchen/Delivery/Workforce AI — every answer explained and
-> confidence-scored, never performing an irreversible action.
+> plus net-new Kitchen/Delivery/Workforce AI (Part 1) — and a Predictive
+> Intelligence Platform on top (Part 2): a feature store, a versioned
+> model registry with a deployment-stage lifecycle, 8 explainable
+> customer predictions (confidence + top reasons + suggested action on
+> every one), a unified forecasting facade, configurable customer
+> segmentation (rule-based or k-means), PSI-based drift detection, and an
+> automatic nightly retraining pipeline, plus a "Predictive Intelligence"
+> tab in `apps/admin`. Every answer is explained and confidence-scored,
+> and the platform never performs an irreversible action.
 > `apps/delivery` remains a scaffold — its driver-facing PWA is the one
 > frontend not yet built. See [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
@@ -65,7 +72,12 @@ rather than disconnected projects.
   confidence-score framing, adding Kitchen/Delivery/Workforce AI, and
   owning a swappable `LLM_PROVIDER`/`EMBEDDING_PROVIDER`/`VECTOR_PROVIDER`
   layer plus long-term AI memory — every provider defaults to a
-  zero-external-dependency implementation.
+  zero-external-dependency implementation (Part 1). Part 2 adds a
+  Predictive Intelligence Platform in the same tree: a feature store, a
+  model registry with a deployment-stage lifecycle, 8 explainable
+  customer predictions, a unified forecasting facade, confidence
+  calibration, PSI-based drift detection, configurable customer
+  segmentation, and an automatic retraining pipeline.
 - **`apps/web`** — Next.js customer site: marketing/menu/cart/checkout/live
   order tracking/account area, i18n (English/Amharic), dark mode, PWA
   (installable + offline caching), WCAG 2 AA (port 3000), plus Phase 6
@@ -83,7 +95,11 @@ rather than disconnected projects.
   audit-log viewer), settings/security (sessions, 2FA, API keys), and an
   Intelligence section (Phase 6: executive BI, forecasting, customer/
   inventory/marketing AI, a recommendations report, and an AI assistant
-  chat).
+  chat; Phase 11 Part 2 adds a "Predictive Intelligence" tab: all 8
+  explainable customer predictions with feature-importance bars, a model
+  registry with promote-to-stage controls, drift alerts, a retrain
+  trigger, configurable segmentation, and forecast/best-seller/
+  category-trend views).
 - **`apps/delivery`** — Next.js driver dashboard, installable as a PWA (port 3002, scaffold only).
 - **`apps/mobile`** — Expo (React Native, SDK 57) app for Android + iOS,
   using expo-router: the same customer journeys as `apps/web`, natively —
