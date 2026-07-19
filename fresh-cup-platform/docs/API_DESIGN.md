@@ -623,6 +623,54 @@ in the section above and aren't duplicated here.
 | GET    | `/admin/ai/segmentation`                        | cluster customers; `?branchId=&strategy=rule-based\|kmeans` (default rule-based)                      |
 | GET    | `/admin/ai/segmentation/summary`                | customer counts per segment                                                                           |
 
+## Autonomous Restaurant Intelligence Platform (Phase 11 Part 3)
+
+`manager`/`admin` only unless noted. Approvals and governance actions that
+execute a real side effect (`approve`, policy-blocked writes) are
+`admin`-only, same pattern as Part 2's `/admin/ai/retrain`.
+
+| Method | Path                                        | Notes                                                                                                       |
+| ------ | ------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| GET    | `/admin/ai/approvals`                       | list approval requests; optional `?status=&actionType=`                                                     |
+| POST   | `/admin/ai/approvals`                       | draft a new approval request (also used internally by other services)                                       |
+| POST   | `/admin/ai/approvals/{id}/approve`          | `admin` only; body `{ notes? }` — executes the action via `ApprovalExecutorRegistry` where one exists       |
+| POST   | `/admin/ai/approvals/{id}/reject`           | body `{ notes? }` — records the decision, no side effect                                                    |
+| GET    | `/admin/ai/agents`                          | list the 8 domain agents + the coordinator                                                                  |
+| POST   | `/admin/ai/agents/ask`                      | body `{ question, branchId? }` — routes to the matching agent(s), returns a synthesized `CoordinatorResult` |
+| GET    | `/admin/ai/decision-engine/sales-drop`      | `?branchId=&draftApprovals=` — detects a real sales drop and its causes; can draft recommendations          |
+| POST   | `/admin/ai/copilot/ask`                     | body `{ question, branchId? }` — full 5-step reasoning trace + explanation + recommendations                |
+| GET    | `/admin/ai/copilot/export/csv`              | `?question=&branchId=` — CSV of the same answer                                                             |
+| GET    | `/admin/ai/copilot/export/briefing`         | Markdown briefing document                                                                                  |
+| GET    | `/admin/ai/copilot/export/slides`           | JSON slide-outline structure                                                                                |
+| GET    | `/admin/ai/knowledge`                       | list knowledge documents; optional `?category=`                                                             |
+| GET    | `/admin/ai/knowledge/search`                | `?query=` — hybrid (semantic + keyword) search                                                              |
+| POST   | `/admin/ai/knowledge`                       | create + index a document; body includes `sourceFormat` (text sources only — no binary parsing)             |
+| PATCH  | `/admin/ai/knowledge/{id}`                  | update + re-index                                                                                           |
+| DELETE | `/admin/ai/knowledge/{id}`                  | delete + de-index                                                                                           |
+| GET    | `/admin/ai/workflows/definitions`           | list workflow definitions                                                                                   |
+| GET    | `/admin/ai/workflows/runs`                  | list workflow runs; optional `?workflowId=`                                                                 |
+| POST   | `/admin/ai/workflows/low-stock-reorder`     | body `{ branchId }` — runs the one real workflow now, instead of waiting for a trigger                      |
+| POST   | `/admin/ai/automation/marketing-campaign`   | draft a marketing campaign suggestion into the approval inbox                                               |
+| POST   | `/admin/ai/automation/coupon`               | draft a coupon suggestion                                                                                   |
+| POST   | `/admin/ai/automation/promotion`            | draft a promotion suggestion                                                                                |
+| POST   | `/admin/ai/automation/kitchen-staffing`     | body `{ branchId? }` — draft a kitchen staffing suggestion (no automatic executor)                          |
+| POST   | `/admin/ai/automation/delivery-staffing`    | body `{ branchId? }` — draft a delivery staffing suggestion                                                 |
+| POST   | `/admin/ai/automation/employee-scheduling`  | body `{ branchId? }` — draft an employee scheduling suggestion                                              |
+| POST   | `/admin/ai/simulator/scenario`              | body `{ type, magnitudePercent, branchId? }` — read-only "what if" projection                               |
+| POST   | `/admin/ai/simulator/digital-twin`          | body `{ type, magnitudePercent, branchId?, horizonDays?, rampDays? }` — projected daily timeline            |
+| GET    | `/admin/ai/evaluations/trend`               | `?metricName=&modelKey=` — a metric's recorded history                                                      |
+| POST   | `/admin/ai/evaluations/metric`              | record an accuracy/precision/recall/latency measurement                                                     |
+| GET    | `/admin/ai/evaluations/acceptance-rate`     | optional `?source=` — accepted / (accepted + rejected)                                                      |
+| GET    | `/admin/ai/evaluations/business-impact`     | optional `?source=` — estimated vs. actual impact, summed over accepted outcomes                            |
+| POST   | `/admin/ai/evaluations/outcome`             | record a new recommendation outcome (starts undecided)                                                      |
+| POST   | `/admin/ai/evaluations/outcome/{id}/decide` | body `{ status, actualImpact? }` — accept/reject/flag-hallucination a recommendation outcome                |
+| GET    | `/admin/ai/governance/prompts`              | every domain's live system prompt + a fingerprint hash                                                      |
+| POST   | `/admin/ai/governance/policy/evaluate`      | body `{ actionType, payload }` — dry-run the policy engine without creating a request                       |
+
+`/admin/ai/models` (model history) and the approval endpoints above
+(approval history) are the governance module's history views — Part 3
+deliberately doesn't duplicate them under `/admin/ai/governance`.
+
 ## Audit logs (Phase 3)
 
 An `@Auditable(entityType)` decorator + a global interceptor write one
@@ -647,10 +695,11 @@ single Nest instance only — the Socket.IO Redis adapter for horizontal
 scaling is deferred until a second API instance actually exists to justify
 it).
 
-| Namespace      | Who connects                                                                                                                                                                              | Events                                                                      |
-| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
-| `/ws/orders`   | customer (`order:{id}` room, joined explicitly via a `subscribeOrder` message after checkout), staff/manager (auto-joined to `branch:{id}` on connect), admin (`subscribeBranch` message) | `order.created`, `order.status_changed`                                     |
-| `/ws/delivery` | customer/driver/admin (`delivery:{id}` room, joined explicitly via a `subscribeDelivery` message), staff/manager (auto-joined to `branch:{id}` on connect)                                | `delivery.assigned`, `delivery.status_changed`, `delivery.location_updated` |
+| Namespace                          | Who connects                                                                                                                                                                              | Events                                                                      |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `/ws/orders`                       | customer (`order:{id}` room, joined explicitly via a `subscribeOrder` message after checkout), staff/manager (auto-joined to `branch:{id}` on connect), admin (`subscribeBranch` message) | `order.created`, `order.status_changed`                                     |
+| `/ws/delivery`                     | customer/driver/admin (`delivery:{id}` room, joined explicitly via a `subscribeDelivery` message), staff/manager (auto-joined to `branch:{id}` on connect)                                | `delivery.assigned`, `delivery.status_changed`, `delivery.location_updated` |
+| `/ws/ai-copilot` (Phase 11 Part 3) | manager/admin, connects and sends an `ask` message with `{ question, branchId? }`                                                                                                         | `copilot.step` (once per reasoning step, as it completes), `copilot.done`   |
 
 Auth on connect via the same JWT, passed as `{ auth: { token } }` in the
 Socket.IO client's connect options (the standard socket.io-client

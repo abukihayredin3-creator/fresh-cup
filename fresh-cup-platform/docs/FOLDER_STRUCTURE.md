@@ -51,6 +51,17 @@ fresh-cup-platform/
 │   │   │   │   ├── prediction/     # Part 2 — CustomerPredictionService (8 explainable models)
 │   │   │   │   ├── forecasting/    # Part 2 — ForecastingFacadeService
 │   │   │   │   ├── training/       # Part 2 — RetrainingService + RetrainingScheduler
+│   │   │   │   ├── approvals/      # Part 3 — Human Approval Layer (ApprovalService, executor registry)
+│   │   │   │   ├── agents/         # Part 3 — 8 DomainAgents + CoordinatorAgentService (Multi-Agent AI)
+│   │   │   │   ├── decision-engine/ # Part 3 — DecisionEngineService (Autonomous Decision Engine)
+│   │   │   │   ├── copilot/        # Part 3 — CopilotService (5-step reasoning trace) + export utils
+│   │   │   │   ├── knowledge-base/ # Part 3 — KnowledgeBaseService (AI Knowledge Base)
+│   │   │   │   ├── workflows/      # Part 3 — WorkflowEngineService + AutomationService
+│   │   │   │   ├── simulator/      # Part 3 — ScenarioSimulatorService + DigitalTwinService
+│   │   │   │   ├── evaluation-tracker/ # Part 3 — EvaluationTrackerService (Continuous Evaluation)
+│   │   │   │   ├── governance/     # Part 3 — PolicyEngineService + PromptRegistryService
+│   │   │   │   ├── websockets/     # Part 3 — CopilotGateway (/ws/ai-copilot, step-level streaming);
+│   │   │   │   │                   #   distinct from the top-level apps/api/src/websockets/ below
 │   │   │   │   ├── dto/, entities/, events/, utils/
 │   │   │   │   └── ai-intelligence.module.ts
 │   │   │   ├── common/             # guards, interceptors, pipes, decorators

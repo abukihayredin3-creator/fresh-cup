@@ -146,6 +146,7 @@ module (e.g., Notifications) becomes a bottleneck.
 - **Analytics** — on-demand admin dashboard/sales/item/customer reporting; a scheduled-aggregation layer is future work once order volume outgrows live queries (see `ROADMAP.md` Phase 7)
 - **Intelligence** (Phase 6) — recommendations, customer/inventory/marketing intelligence, sales forecasting, executive BI, and an AI assistant, all hand-rolled statistics over the tables above — see §6a
 - **Restaurant Intelligence Platform** (Phase 11, `apps/api/src/intelligence`) — wraps five of Phase 6's services with explanation/confidence framing, adds kitchen/delivery/workforce AI, and owns a swappable LLM/embedding/vector provider layer — see §6b
+- **Autonomous Restaurant Intelligence Platform** (Phase 11 Part 3, same `apps/api/src/intelligence` tree) — a Human Approval Layer + governance policy engine, multi-agent AI, an autonomous decision engine, an Executive Copilot, a knowledge base, a workflow/automation engine, and a scenario simulator/digital twin, all built on §6b/§6c — see §6d
 - **Audit** — a cross-cutting interceptor logging every admin mutation (actor, action, entity, after-state), not a bounded context of its own
 - **Branches** — restaurant locations (one today, extensible)
 
@@ -325,6 +326,99 @@ implementation — no RNG, so results are reproducible). Both map to a
 that's deliberately distinct from Phase 6's own 6-label RFM segments —
 different question, additive rather than a replacement.
 
+### 6d. Autonomous Restaurant Intelligence Platform (Phase 11 Part 3)
+
+Built on top of §6b/§6c's trees, this part turns the read-only insight
+layer into one that can safely act: every mechanism below either drafts
+into a single human-reviewed inbox or stays strictly read-only — nothing
+new writes to production data without a human clicking approve.
+
+**Human Approval Layer & governance.** `ApprovalService.request()` is the
+one path anything in this part uses to propose an irreversible action; it
+always writes a `PENDING` `AiApprovalRequest` row, never executes
+directly. Before that write happens, `PolicyEngineService.evaluate()` runs
+— it can block the request outright (`ForbiddenException`, nothing is
+written) or escalate its risk level. Only an admin approving via
+`POST /admin/ai/approvals/:id/approve` triggers
+`ApprovalExecutorRegistry.execute()`, which maps the action type to a real
+service call (purchase orders, coupons, campaigns, menu items, payments)
+for the action types where a generic executor is safe to write; refunds,
+staffing changes, and catch-all actions have none — approving those
+records the human decision without an automatic side effect, since their
+payload shapes vary too much to generalize safely. `PromptRegistryService`
+fingerprints every domain's system prompt as it exists in code (reusing
+§6c's dataset-hashing utility) rather than versioning a live-editable
+prompt CMS this platform doesn't have.
+
+**Multi-Agent AI.** Eight `DomainAgent` implementations (Sales, Marketing,
+Inventory, Kitchen, Delivery, Finance, HR, Executive) each wrap one or two
+existing §6b domain AI methods into one shared answer shape.
+`CoordinatorAgentService` scores a natural-language question against each
+agent's keywords, runs the matching agents in parallel, and synthesizes
+their insights into a single ranked, confidence-averaged answer —
+`POST /admin/ai/agents/ask` is the one endpoint a manager needs regardless
+of which domain the question actually concerns.
+
+**Autonomous Decision Engine & Executive Copilot.**
+`DecisionEngineService.detectSalesDrop()` compares two trailing 7-day
+`ExecutiveService.overview()` windows and, once a real drop is detected,
+builds its `DecisionReason[]` only from signals this platform actually
+has (revenue trend slope, order-count/foot-traffic drop, recently-expired
+coupons) — there is no weather signal anywhere in the schema, so a
+weather-based reason is never fabricated to fill out an explanation.
+`CopilotService.ask()` chains that detection into a five-step trace
+(collect via the coordinator agents → analyze/compare via the decision
+engine → forecast via §6c's forecasting facade → explain via §6b's
+`ExplanationService` → recommend), returning every step's timing so the
+reasoning is inspectable, not just the final answer — and can optionally
+stream each step over `POST /ws/ai-copilot` as it completes (step-level,
+not token-level; no `LlmProvider` in this platform streams completions
+yet). Its export helpers produce a real CSV, a real Markdown briefing, and
+a real JSON slide outline — not rendered PDF/PPTX, a deliberate choice to
+avoid a new heavy dependency.
+
+**Restaurant memory, knowledge base, and hybrid search.** §6b's
+`AiMemoryService` gained nine new memory kinds (customer preferences,
+manager feedback, campaign history, supplier issues, inventory failures,
+holiday demand, branch behavior, staff performance, learning digests) and
+a `ConversationMemoryService` for recent-turn recall; a new
+`LearningDigestScheduler` writes weekly/monthly/seasonal/yearly summarized
+digests from real overview + explanation output — memory accumulation,
+not model retraining, which stays §6c's job. A new `KnowledgeBaseService`
+stores and indexes plain-text/Markdown documents (policies, recipes,
+training manuals, food safety, HR policy, supplier agreements,
+architecture/API docs); it records what a document's original format was
+but does not parse PDF/DOCX/images itself — a documented scope boundary,
+not a silent gap. `RagService.hybridRetrieve()` blends §6b's semantic
+retrieval with a Postgres keyword match, and `VectorProvider.query()`
+gained an optional metadata `filter`, genuinely implemented against the
+default `PgVectorProvider` and best-effort passed through to the three
+remote providers.
+
+**Workflow engine, automation, and simulation.** Rather than a generic
+if/then interpreter — a materially riskier project than the rest of this
+hand-rolled platform takes on — `WorkflowEngineService` ships one fully
+executed workflow: detect low stock, check for an active supplier, draft
+a purchase order into the Approval Layer, and log the notify/track steps
+that hand off to Phase 3's existing purchasing flow once a human approves.
+`AutomationService` drafts marketing/coupon/promotion suggestions (real
+executors) and kitchen/delivery/staffing suggestions (no executor — the
+value is one inbox, not an auto-edited shift) from each domain AI
+service's top insight. `ScenarioSimulatorService` projects "what if"
+outcomes from a documented, named-constant elasticity heuristic — not
+fit from real price-change history, since none exists — with an
+intentionally low, hardcoded confidence; `DigitalTwinService` layers a
+linear-ramp timeline on top of the same simulation. Neither service ever
+calls a Prisma write — "without touching production" is enforced by what
+the code never imports.
+
+**Continuous evaluation.** `EvaluationTrackerService` logs
+accuracy/precision/recall/latency per model and computes recommendation
+acceptance rate and business impact from decided outcome records.
+Hallucination flagging is a manual admin action, not an automatic
+detector — this platform has no ground-truth signal to detect a
+fabricated claim on its own.
+
 ## 7. API architecture
 
 Full detail in [`API_DESIGN.md`](API_DESIGN.md). Summary:
@@ -338,7 +432,7 @@ Full detail in [`API_DESIGN.md`](API_DESIGN.md). Summary:
 - Idempotency keys required on order-creation and payment endpoints
 - Cursor-based pagination on all list endpoints
 - RFC 7807 `problem+json` error format
-- WebSocket namespaces: `/ws/orders` (customer + kitchen/staff), `/ws/delivery` (driver location + assignment)
+- WebSocket namespaces: `/ws/orders` (customer + kitchen/staff), `/ws/delivery` (driver location + assignment), `/ws/ai-copilot` (step-level Executive Copilot streaming, Phase 11 Part 3)
 - Signed webhook endpoint for Chapa payment callbacks
 
 ## 8. Data architecture

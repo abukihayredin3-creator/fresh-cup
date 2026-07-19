@@ -555,6 +555,151 @@ marketing,workforce,memory,assistant}` routes, all untouched — Part 2's
   status/versions/drift alerts/predictions; the full test suite —
   Phases 1–6 and Phase 11 Part 1 included — still passes untouched
 
+### Part 3: Autonomous Restaurant Intelligence Platform
+
+- Ten new subtrees under `apps/api/src/intelligence/` —
+  `approvals/`, `agents/`, `decision-engine/`, `copilot/`, `knowledge-base/`,
+  `workflows/`, `simulator/`, `evaluation-tracker/`, `governance/`,
+  `websockets/` — plus extensions to Part 1's `memory/`, `rag/`, `vector/`,
+  and `scheduler/` directories. None of Part 1's or Part 2's files were
+  rewritten; every addition either wraps an existing service or extends an
+  existing interface with an optional parameter.
+- **Human Approval Layer** (`approvals/`, new `ai_approval_requests` table)
+  — every irreversible or high-risk AI-suggested action (refund, discount,
+  promotion, coupon, price change, purchase order, staffing change) is
+  written as a `PENDING` `AiApprovalRequest`, never executed directly.
+  `ApprovalExecutorRegistry` maps action types to real service calls
+  (`PurchaseOrdersService`, `CouponsService`, `CampaignsService`,
+  `MenuItemsService`, `PaymentsService`) for the action types where a safe
+  generic executor exists; `DELETE`/`STAFFING_CHANGE`/`OTHER` intentionally
+  have no automatic executor — payload shapes vary too much to generalize
+  safely, so approving those just records the human decision. Only
+  `POST /admin/ai/approvals/:id/approve` (admin-only) executes anything.
+- **AI Governance policy engine** (`governance/PolicyEngineService`) sits
+  in front of every approval request — `blocked: true` throws before a
+  request row is ever created; `escalateTo` can raise a request's risk
+  level. `PromptRegistryService` fingerprints (FNV-1a, reusing Part 2's
+  `hashDataset` utility) every domain's system prompt as it exists in code
+  right now — prompts are static TypeScript, not rows in an editable CMS,
+  so "prompt history" means "what's live plus a hash that changes the
+  moment the code does," not a version-diff UI. "Model history" and
+  "approval history" deliberately reuse Part 2's `/admin/ai/models` and
+  this part's `/admin/ai/approvals` rather than duplicating read surfaces.
+- **Multi-Agent AI** (`agents/`) — 8 `DomainAgent` implementations (Sales,
+  Marketing, Inventory, Kitchen, Delivery, Finance, HR, Executive), each a
+  thin wrapper over one or two existing Part 1 domain AI methods.
+  `CoordinatorAgentService` routes a natural-language question to the
+  agents whose keywords overlap it (falling back to the Executive agent),
+  runs them in parallel, and synthesizes their insights into one ranked,
+  confidence-averaged answer — surfaced at `POST /admin/ai/agents/ask`.
+- **Autonomous Decision Engine** (`decision-engine/`) — `detectSalesDrop()`
+  compares two trailing 7-day windows via Part 1's `ExecutiveService`;
+  once a drop crosses a 10% threshold it builds `DecisionReason[]` from
+  real signals only (revenue trend slope, order-count/foot-traffic drop,
+  recently-expired coupons) — there is no weather signal anywhere in this
+  platform, so "Rain" from the phase brief's worked example is never
+  fabricated; an "Undetermined" reason with low confidence is used instead
+  when no real signal explains the drop. `buildRecommendations()` can
+  optionally draft the top two recommendations straight into the Approval
+  Layer.
+- **Executive Copilot** (`copilot/`) — `CopilotService.ask()` runs a real
+  five-step trace (collect via the coordinator agents → analyze/compare
+  via the decision engine → forecast via Part 2's forecasting facade →
+  explain via Part 1's `ExplanationService` → recommend) and returns every
+  step's timing and summary alongside the final answer, so "how did the
+  AI get there" is always inspectable. Exports to real CSV (opens in
+  Excel), a real Markdown briefing document, and a real JSON slide-outline
+  structure — not rendered binary PDF/PPTX, a deliberate choice to avoid
+  adding new heavy dependencies to a platform that has none.
+- **Restaurant Memory + long-term learning** (`memory/` extensions,
+  `scheduler/LearningDigestScheduler`) — nine new `AiMemoryKind`s (customer
+  preferences, manager feedback, campaign history, supplier issues,
+  inventory failures, holiday demand, branch behavior, staff performance,
+  learning digests) and a `ConversationMemoryService` for recent-turn
+  recall. Weekly/monthly/seasonal/yearly cron jobs write summarized
+  `LEARNING_DIGEST` memory entries from real overview + explanation data —
+  this is memory accumulation, not model retraining, which Part 2's
+  `RetrainingService` already owns.
+- **Vector search upgrade** (`rag/`, `vector/`) — `hybridRetrieve()` blends
+  semantic retrieval with a Postgres `ILIKE` keyword match, weighted and
+  re-ranked; this degrades gracefully to vector-only when a remote
+  provider (OpenSearch/Pinecone/Qdrant) is configured, since those
+  providers' own storage isn't visible to the local `VectorEntry` table.
+  `VectorProvider.query()` gained an optional metadata `filter` parameter,
+  genuinely implemented for the default `PgVectorProvider` (Prisma JSON-path
+  filtering) and best-effort passed through to the three remote providers.
+- **AI Knowledge Base** (`knowledge-base/`, new `ai_knowledge_documents`
+  table) — stores and indexes plain-text/Markdown content for policies,
+  recipes, training manuals, food safety, HR policy, supplier agreements,
+  and architecture/API docs; a `sourceFormat` field records what the
+  original document was (Markdown/plain text/PDF/DOCX/image) for a future
+  binary-parsing pipeline this phase does not ship — no OCR or PDF/DOCX
+  parsing, a documented scope boundary rather than a silent gap.
+- **AI Workflow Engine + Automation** (`workflows/`) — rather than a
+  generic if/then interpreter (a materially riskier project than the rest
+  of this hand-rolled platform takes on), this phase ships one fully
+  executed, real workflow: detect low stock → check for an active supplier
+  → draft a purchase order into the Approval Layer → log a notify-manager
+  step → log a track-approval step noting that receiving inventory and
+  updating stock reuse the existing Phase 3 purchasing flow once approved,
+  rather than reimplementing it. Every run persists as an `AiWorkflowRun`
+  with a full step log. `AutomationService` drafts marketing
+  campaign/coupon/promotion suggestions (with real executors) and kitchen/
+  delivery/employee-staffing suggestions (`STAFFING_CHANGE`, no automatic
+  executor — the draft's value is surfacing the suggestion in one inbox,
+  not auto-editing a shift) from each domain AI service's top insight.
+  Automatic forecast regeneration was already covered by Part 2's nightly
+  retraining job — no new mechanism was needed for it.
+- **Scenario Simulator + Digital Twin** (`simulator/`) — a documented
+  heuristic elasticity model (named constants for price/promotion
+  elasticity, staffing throughput, labor cost share, profit sensitivity —
+  not fit from real price-change history, since none exists) projects
+  "what if" outcomes with an intentionally low, hardcoded confidence and an
+  `assumptions` array stating the exact formula used. `DigitalTwinService`
+  layers a linear-ramp daily timeline on top of the same simulation;
+  neither service ever writes to Prisma — "without touching production" is
+  enforced by what the code never imports, not by a runtime guard.
+- **Continuous Evaluation** (`evaluation-tracker/`, new
+  `ai_evaluation_records` and `ai_recommendation_outcomes` tables) — logs
+  accuracy/precision/recall/latency per model, computes recommendation
+  acceptance rate and business impact (estimated vs. actual, summed over
+  accepted outcomes). Hallucination flagging is a manual admin action, not
+  an automatic detector — this platform has no ground-truth signal to
+  detect a fabricated claim, a documented gap rather than an oversight.
+- **WebSocket streaming** (`websockets/CopilotGateway`, `/ws/ai-copilot`)
+  — mirrors the existing `OrdersGateway`'s JWT-in-handshake pattern and
+  streams real per-step `copilot.step` events as the Copilot's five-step
+  trace executes, followed by `copilot.done`. This is step-level
+  streaming, not token-level LLM streaming — no `LlmProvider` in this
+  platform exposes a streaming completion API yet.
+- **New AI API surfaces** — `/admin/ai/approvals`, `/admin/ai/agents`,
+  `/admin/ai/decision-engine`, `/admin/ai/copilot` (plus CSV/briefing/
+  slides export routes), `/admin/ai/knowledge`, `/admin/ai/workflows`,
+  `/admin/ai/automation`, `/admin/ai/simulator`, `/admin/ai/evaluations`,
+  `/admin/ai/governance`, alongside every Part 1/Part 2 route, untouched.
+- **`apps/admin` AI Studio** — a new `/ai-studio` section with six tabs
+  (Agents & Copilot, Approvals, Knowledge, Workflows & Automation,
+  Simulator, Evaluations & Governance) — a deliberate consolidation of the
+  phase brief's longer list (Memory and Prompts folded into Evaluations &
+  Governance; Models reuses Part 2's existing Predictive Intelligence tab
+  rather than duplicating it).
+- 120 new tests alongside Parts 1–2's 419, bringing the API suite to 539
+  tests; typecheck/lint clean across the whole monorepo, a full Nest app
+  boot verifying every new provider/service/gateway/worker resolves in the
+  DI graph, and a clean `apps/admin` production build including all six
+  new AI Studio routes.
+- **Exit criteria (Part 3):** multi-agent AI is operational and routes
+  real questions; the Executive Copilot produces a full, exportable action
+  plan with an inspectable reasoning trace; AI memory and the knowledge
+  base are queryable via hybrid search; workflow automation and the six
+  automation drafts write into a single approval inbox; the scenario
+  simulator and digital twin run without touching production; every
+  prediction and recommendation across Parts 1–3 remains confidence-scored
+  and explained; the human approval workflow is the only path to executing
+  a high-risk action; AI Studio ships in `apps/admin`; the full test
+  suite — Phases 1–6 and Phase 11 Parts 1–2 included — still passes
+  untouched.
+
 ## Sequencing notes
 
 - Auth and RBAC came first (Phase 1) because every other phase's endpoints
@@ -605,3 +750,13 @@ marketing,workforce,memory,assistant}` routes, all untouched — Part 2's
   dependency reason to wait. It does not complete Phase 7 (multi-supplier
   price comparison remains open) or Phase 8 (still on-demand queries, no
   new materialized views) — those stay exactly as scoped above.
+- Phase 11 Part 3 (Autonomous Restaurant Intelligence Platform) came
+  directly after Part 2 for the same reason Part 2 followed Part 1: it
+  builds on Part 1's domain AI services and Part 2's forecasting facade
+  and model registry rather than anything outside this phase, so there
+  was nothing to gain by sequencing other work in between. Its Human
+  Approval Layer and policy engine are what let every later autonomous
+  mechanism (the decision engine, automation drafts, the workflow engine)
+  take real actions safely — building the approval layer first, before
+  anything that drafts into it, avoided a chicken-and-egg ordering
+  problem within the part itself.

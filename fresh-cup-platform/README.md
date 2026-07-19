@@ -8,7 +8,7 @@ admin dashboard, customer portal, delivery dashboard, loyalty system, QR
 menu, inventory management, and analytics — built as one coherent system
 rather than disconnected projects.
 
-> **Status:** Phase 11 (Parts 1 & 2) complete — `apps/api` implements auth/RBAC,
+> **Status:** Phase 11 (Parts 1, 2 & 3) complete — `apps/api` implements auth/RBAC,
 > catalog, inventory (Phase 1), the full ordering engine — cart, checkout,
 > payments, coupons, loyalty, real-time order updates (Phase 2) — the
 > restaurant operations platform — kitchen display, delivery/driver
@@ -38,8 +38,18 @@ rather than disconnected projects.
 > every one), a unified forecasting facade, configurable customer
 > segmentation (rule-based or k-means), PSI-based drift detection, and an
 > automatic nightly retraining pipeline, plus a "Predictive Intelligence"
-> tab in `apps/admin`. Every answer is explained and confidence-scored,
-> and the platform never performs an irreversible action.
+> tab in `apps/admin` — and an Autonomous Restaurant Intelligence Platform
+> on top (Part 3): a Human Approval Layer + governance policy engine so
+> every irreversible AI action goes through a human before it executes,
+> 8 specialized agents plus a coordinator (Multi-Agent AI), an autonomous
+> decision engine that explains real sales drops from real signals, an
+> Executive Copilot with a fully inspectable 5-step reasoning trace and
+> CSV/briefing/slide exports, an AI knowledge base with hybrid search, a
+> real low-stock-reorder workflow plus six automation drafts, a scenario
+> simulator and read-only digital twin, continuous evaluation, and a new
+> "AI Studio" section in `apps/admin`. Every answer is explained and
+> confidence-scored, and the platform never performs an irreversible
+> action outside the approval workflow.
 > `apps/delivery` remains a scaffold — its driver-facing PWA is the one
 > frontend not yet built. See [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
@@ -77,7 +87,18 @@ rather than disconnected projects.
   model registry with a deployment-stage lifecycle, 8 explainable
   customer predictions, a unified forecasting facade, confidence
   calibration, PSI-based drift detection, configurable customer
-  segmentation, and an automatic retraining pipeline.
+  segmentation, and an automatic retraining pipeline. Part 3 adds an
+  Autonomous Restaurant Intelligence Platform in the same tree: a Human
+  Approval Layer (every high-risk action is drafted, never executed,
+  until an admin approves it) behind a governance policy engine, 8
+  domain agents plus a coordinator, an autonomous decision engine, an
+  Executive Copilot with a 5-step reasoning trace and CSV/briefing/slide
+  exports, hybrid (semantic + keyword) search, an AI knowledge base, one
+  real low-stock-reorder workflow plus six automation drafts, a scenario
+  simulator/digital twin, and continuous evaluation — see
+  `docs/ROADMAP.md`'s Part 3 section for the explicit scope boundaries
+  (no PDF/DOCX/OCR parsing, no generic if/then interpreter, no
+  token-level LLM streaming, no automatic hallucination detection).
 - **`apps/web`** — Next.js customer site: marketing/menu/cart/checkout/live
   order tracking/account area, i18n (English/Amharic), dark mode, PWA
   (installable + offline caching), WCAG 2 AA (port 3000), plus Phase 6
@@ -99,7 +120,14 @@ rather than disconnected projects.
   explainable customer predictions with feature-importance bars, a model
   registry with promote-to-stage controls, drift alerts, a retrain
   trigger, configurable segmentation, and forecast/best-seller/
-  category-trend views).
+  category-trend views), and a new "AI Studio" section (Phase 11 Part 3):
+  Agents & Copilot (ask any of the 8 domain agents or the full Executive
+  Copilot, with CSV/briefing/slide export), Approvals (the Human Approval
+  Layer inbox), Knowledge (AI knowledge base + hybrid search), Workflows
+  & Automation (run the low-stock-reorder workflow, draft the six
+  automation suggestions), Simulator (scenario "what if" projections +
+  digital twin timeline), and Evaluations & Governance (acceptance rate,
+  business impact, system prompt registry).
 - **`apps/delivery`** — Next.js driver dashboard, installable as a PWA (port 3002, scaffold only).
 - **`apps/mobile`** — Expo (React Native, SDK 57) app for Android + iOS,
   using expo-router: the same customer journeys as `apps/web`, natively —

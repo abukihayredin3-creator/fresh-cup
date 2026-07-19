@@ -637,6 +637,81 @@ comparison never writes a row). `resolved_at` is set by
 
 | id, model_key, drift_type (`feature_drift`,`prediction_drift`,`data_drift`,`concept_drift`), severity (`low`,`medium`,`high`), metric_name, baseline_value, current_value, detail, detected_at, resolved_at NULL | index (model_key, detected_at); index (resolved_at) |
 
+## 17b. Autonomous Restaurant Intelligence Platform (Phase 11 Part 3)
+
+Purely additive on top of sections 15-17 — nothing above changes shape.
+`AiMemoryKind` (section 16) gained nine new values (customer preference,
+manager feedback, campaign history, supplier issue, inventory failure,
+holiday demand, branch behavior, staff performance, learning digest) but
+`ai_memory_entries` itself is unchanged in shape. `branches` gained an
+`ai_approval_requests` relation and `users` gained
+`ai_approvals_reviewed`/`ai_recommendations_decided` relations, both
+purely additive foreign keys.
+
+### `ai_approval_requests`
+
+The Human Approval Layer — every irreversible or high-risk action an AI
+component wants to take (auto-drafted purchase order, discount,
+promotion, refund, price change, staffing change) is written here as
+`PENDING` instead of executed directly. `payload` carries whatever the
+eventual executor (`ApprovalExecutorRegistry`, keyed by `action_type`)
+needs to perform the action once a manager approves it; not every action
+type has a registered executor (`DELETE`/`STAFFING_CHANGE`/`OTHER` do
+not — their payload shapes vary too much to generalize safely), so
+approving those records the decision without a further write.
+
+| id, action_type (`refund`,`delete`,`discount`,`promotion`,`inventory_purchase_order`,`price_change`,`marketing_campaign`,`staffing_change`,`other`), risk_level (`low`,`medium`,`high`,`critical`), summary, payload jsonb, status (`pending`,`approved`,`rejected`), requested_by_agent, reviewed_by_user_id FK NULL `ON DELETE SET NULL`, reviewed_at NULL, review_notes NULL, branch_id FK NULL `ON DELETE CASCADE`, created_at | index (status, created_at); index (action_type, status) |
+
+### `ai_workflow_definitions`, `ai_workflow_runs`
+
+The AI Workflow Engine. Rather than a generic if/then interpreter,
+`triggerConfig`/`steps` are small JSON DSLs interpreted by
+`WorkflowEngineService` against a fixed, code-defined step-kind union —
+not arbitrary admin-authored logic (see `ROADMAP.md`'s Part 3 scope
+notes for why: a sandboxed generic evaluator is a materially riskier
+project than the rest of this hand-rolled platform takes on). This phase
+ships exactly one definition (`ensureLowStockReorderDefinition()`
+find-or-creates it) and one workflow-run trace shape; `step_log` records
+each step's outcome in order so a run is reconstructable without
+re-running it.
+
+| Table                     | Columns                                                                                                                                                                                            |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ai_workflow_definitions` | id, name, description NULL, trigger_type (`event`,`schedule`,`manual`), trigger_config jsonb, steps jsonb, enabled, created_at, updated_at                                                         |
+| `ai_workflow_runs`        | id, workflow_id FK `ON DELETE CASCADE`, status (`running`,`waiting_approval`,`completed`,`failed`), context jsonb, step_log jsonb, started_at, completed_at NULL — index (workflow_id, started_at) |
+
+### `ai_knowledge_documents`
+
+The AI Knowledge Base — policies, recipes, training manuals, food
+safety, HR policy, supplier agreements, marketing/architecture/API docs.
+`content` is always the plain-text/Markdown actually indexed into
+`vector_entries` (namespace `"ai-knowledge-base"`); `source_format`
+records what the original document was so a future binary-parsing
+pipeline (PDF/DOCX/OCR) has somewhere to write extracted text — this
+phase deliberately does not ship that parser, so PDF/DOCX/IMAGE
+documents must be ingested as pre-extracted text today.
+
+| id, title, category, content, source_format (`markdown`,`plain_text`,`pdf`,`docx`,`image`, default `markdown`), metadata jsonb NULL, created_at, updated_at | index (category) |
+
+### `ai_evaluation_records`
+
+Continuous Evaluation — a time series of measured metric values
+(accuracy/precision/recall/latency/etc.) so `EvaluationTrackerService`
+can report trends rather than a single snapshot.
+
+| id, metric_name, model_key NULL, value, context jsonb NULL, recorded_at | index (metric_name, recorded_at) |
+
+### `ai_recommendation_outcomes`
+
+Tracks whether a human accepted/rejected an AI recommendation — the
+basis for recommendation-acceptance-rate and business-impact/ROI
+metrics. `flagged_hallucination` is a manual flag an admin sets, not an
+automatic detector — this platform has no ground-truth signal to
+measure hallucination rate on its own, a documented gap rather than an
+oversight.
+
+| id, source, recommendation, status (`pending`,`accepted`,`rejected`,`ignored`), estimated_impact NULL, actual_impact NULL, decided_by_user_id FK NULL `ON DELETE SET NULL`, decided_at NULL, flagged_hallucination (default false), created_at | index (source, status) |
+
 ## 18. Analytics
 
 Implemented in Phase 3 as on-demand aggregate queries against the live
