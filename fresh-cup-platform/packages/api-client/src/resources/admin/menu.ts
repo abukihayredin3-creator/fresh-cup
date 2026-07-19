@@ -27,8 +27,10 @@ export class AdminMenuResource {
   constructor(private readonly client: ApiClient) {}
 
   // Categories
-  listCategories(): Promise<PaginatedResult<MenuCategory>> {
-    return this.client.request("/admin/menu-categories");
+  listCategories(
+    params: PaginationParams & { branchId?: string } = {},
+  ): Promise<PaginatedResult<MenuCategory>> {
+    return this.client.request(`/admin/menu-categories${toQueryString(params)}`);
   }
 
   createCategory(input: CreateMenuCategoryInput): Promise<MenuCategory> {
