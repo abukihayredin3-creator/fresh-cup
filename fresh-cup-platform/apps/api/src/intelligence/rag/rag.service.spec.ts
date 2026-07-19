@@ -82,6 +82,22 @@ describe("RagService", () => {
     expect(vectors.query).toHaveBeenCalledWith("ai-memory", [1, 0, 0], 3, { domain: "executive" });
   });
 
+  describe("deleteIndexed", () => {
+    it("does nothing when RAG is disabled", async () => {
+      const { embeddings, vectors, prisma } = makeDeps();
+      const rag = new RagService(configWith(false), prisma, embeddings, vectors);
+      await rag.deleteIndexed("ai-knowledge-base", ["doc-1"]);
+      expect(vectors.delete).not.toHaveBeenCalled();
+    });
+
+    it("delegates to the vector provider when enabled", async () => {
+      const { embeddings, vectors, prisma } = makeDeps();
+      const rag = new RagService(configWith(true), prisma, embeddings, vectors);
+      await rag.deleteIndexed("ai-knowledge-base", ["doc-1"]);
+      expect(vectors.delete).toHaveBeenCalledWith("ai-knowledge-base", ["doc-1"]);
+    });
+  });
+
   describe("hybridRetrieve", () => {
     it("blends semantic and keyword matches, ranking overlap highest", async () => {
       const { embeddings, vectors, prisma } = makeDeps();

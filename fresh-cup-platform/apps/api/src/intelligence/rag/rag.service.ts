@@ -42,6 +42,11 @@ export class RagService {
     await this.vectors.upsert(namespace, [{ id, embedding, content, metadata }]);
   }
 
+  async deleteIndexed(namespace: string, ids: string[]): Promise<void> {
+    if (!this.enabled || ids.length === 0) return;
+    await this.vectors.delete(namespace, ids);
+  }
+
   async retrieve(
     namespace: string,
     query: string,
