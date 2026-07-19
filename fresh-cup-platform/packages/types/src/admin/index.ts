@@ -1,3 +1,4 @@
+export * from "./ai-studio";
 export * from "./analytics";
 export * from "./audit";
 export * from "./catalog";

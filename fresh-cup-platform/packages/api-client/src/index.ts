@@ -1,5 +1,6 @@
 import { ApiClient, type ApiClientOptions } from "./client";
 import { AddressesResource } from "./resources/addresses";
+import { AdminAiStudioResource } from "./resources/admin/ai-studio";
 import { AdminAnalyticsResource } from "./resources/admin/analytics";
 import { AdminAuditResource } from "./resources/admin/audit";
 import { AdminBranchesResource } from "./resources/admin/branches";
@@ -30,6 +31,7 @@ import { UsersResource } from "./resources/users";
 export * from "./client";
 export * from "./query";
 export * from "./resources/addresses";
+export * from "./resources/admin/ai-studio";
 export * from "./resources/admin/analytics";
 export * from "./resources/admin/audit";
 export * from "./resources/admin/branches";
@@ -77,6 +79,7 @@ export interface FreshCupAdminApiClient {
   marketing: AdminMarketingResource;
   reviews: AdminReviewsResource;
   intelligence: AdminIntelligenceResource;
+  aiStudio: AdminAiStudioResource;
 }
 
 export interface FreshCupApiClient {
@@ -130,6 +133,7 @@ export function createFreshCupClient(options: ApiClientOptions): FreshCupApiClie
       marketing: new AdminMarketingResource(raw),
       reviews: new AdminReviewsResource(raw),
       intelligence: new AdminIntelligenceResource(raw),
+      aiStudio: new AdminAiStudioResource(raw),
     },
   };
 }
