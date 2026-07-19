@@ -16,6 +16,7 @@
     "@fresh-cup/types": "workspace:*",
     "@fresh-cup/ui": "workspace:*",
     "@fresh-cup/utils": "workspace:*",
+    "@tanstack/react-query": "^5.101.2",
     "next": "16.2.10",
     "react": "19.2.4",
     "react-dom": "19.2.4"
