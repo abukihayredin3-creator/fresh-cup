@@ -22,6 +22,8 @@ import { MarketingAgent } from "./agents/marketing.agent";
 import { SalesAgent } from "./agents/sales.agent";
 import { DecisionEngineController } from "./decision-engine/decision-engine.controller";
 import { DecisionEngineService } from "./decision-engine/decision-engine.service";
+import { CopilotController } from "./copilot/copilot.controller";
+import { CopilotService } from "./copilot/copilot.service";
 import { AssistantAiController } from "./controllers/assistant-ai.controller";
 import { AiMemoryController } from "./controllers/ai-memory.controller";
 import { CustomerAiController } from "./controllers/customer-ai.controller";
@@ -101,6 +103,7 @@ import { EmbeddingBackfillWorker } from "./workers/embedding-backfill.worker";
     ApprovalsController,
     AgentsController,
     DecisionEngineController,
+    CopilotController,
     ExecutiveAiController,
     SalesAiController,
     CustomerAiController,
@@ -131,6 +134,7 @@ import { EmbeddingBackfillWorker } from "./workers/embedding-backfill.worker";
     ExecutiveAgent,
     CoordinatorAgentService,
     DecisionEngineService,
+    CopilotService,
     {
       provide: LLM_PROVIDER_TOKEN,
       useFactory: createLlmProvider,
