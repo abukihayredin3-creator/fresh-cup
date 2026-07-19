@@ -14,12 +14,14 @@ import {
 import { useLocale, useTranslations } from "next-intl";
 import { use, useMemo, useState } from "react";
 import { renderProductImage } from "@/components/ProductImage";
+import { RecommendationRow } from "@/components/RecommendationRow";
 import { useRouter } from "@/i18n/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { useCart } from "@/lib/cart-context";
 import { useFavorites } from "@/lib/favorites-context";
 import { localizedText } from "@/lib/localized";
 import { useMenuItem } from "@/lib/use-menu";
+import { useFrequentlyBoughtTogether, useSimilarProducts } from "@/lib/use-recommendations";
 
 function isGroupSatisfied(group: MenuItemModifierGroup, selected: string[]): boolean {
   return selected.length >= group.minSelect;
@@ -39,6 +41,8 @@ export default function ProductDetailPage({ params }: { params: Promise<{ itemId
   const toast = useToast();
 
   const { data: item, isLoading } = useMenuItem(itemId);
+  const { data: fbt } = useFrequentlyBoughtTogether(itemId);
+  const { data: similar } = useSimilarProducts(itemId);
 
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
   const [selections, setSelections] = useState<Record<string, string[]>>({});
@@ -290,6 +294,15 @@ export default function ProductDetailPage({ params }: { params: Promise<{ itemId
             {item.isAvailable ? t("addToCart") : t("unavailable")}
           </Button>
         </div>
+      </div>
+
+      <div className="mt-10 flex flex-col gap-8">
+        <RecommendationRow
+          title={t("frequentlyBoughtTogether")}
+          items={fbt?.items ?? []}
+          locale={locale}
+        />
+        <RecommendationRow title={t("similarItems")} items={similar?.items ?? []} locale={locale} />
       </div>
     </div>
   );

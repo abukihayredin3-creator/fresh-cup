@@ -62,7 +62,12 @@
     "modifierRequired": "Required — choose {min}",
     "modifierOptional": "Optional",
     "favoriteAdd": "Add to favorites",
-    "favoriteRemove": "Remove from favorites"
+    "favoriteRemove": "Remove from favorites",
+    "frequentlyBoughtTogether": "Frequently bought together",
+    "similarItems": "You might also like",
+    "trending": "Trending now",
+    "seasonalPicks": "Seasonal picks",
+    "recommendedForYou": "Recommended for you"
   },
   "cart": {
     "title": "Your cart",
@@ -77,7 +82,8 @@
     "itemCountOther": "{count} items",
     "checkout": "Checkout",
     "clearCart": "Clear cart",
-    "clearCartConfirm": "Remove everything from your cart?"
+    "clearCartConfirm": "Remove everything from your cart?",
+    "customersAlsoOrdered": "Customers also ordered"
   },
   "checkout": {
     "title": "Checkout",

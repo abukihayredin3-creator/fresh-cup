@@ -14,6 +14,7 @@ import {
 import { useLocale, useTranslations } from "next-intl";
 import { useMemo, useState } from "react";
 import { renderProductImage } from "@/components/ProductImage";
+import { RecommendationRow } from "@/components/RecommendationRow";
 import { useRouter } from "@/i18n/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { useBranch } from "@/lib/branch-context";
@@ -21,6 +22,10 @@ import { useCart } from "@/lib/cart-context";
 import { useFavorites } from "@/lib/favorites-context";
 import { localizedText } from "@/lib/localized";
 import { useCategories, useMenuItems } from "@/lib/use-menu";
+import {
+  usePersonalizedRecommendations,
+  useTrendingRecommendations,
+} from "@/lib/use-recommendations";
 
 const ALL_CATEGORY = "all";
 
@@ -40,6 +45,8 @@ export default function MenuPage() {
   const { data: categories = [], isLoading: categoriesLoading } = useCategories(branchId);
   const { data: itemsResult, isLoading: itemsLoading } = useMenuItems(branchId);
   const items = useMemo(() => itemsResult?.items ?? [], [itemsResult]);
+  const { data: trending } = useTrendingRecommendations(branchId);
+  const { data: personalized } = usePersonalizedRecommendations(branchId, Boolean(user));
 
   const [selectedCategory, setSelectedCategory] = useState<string>(ALL_CATEGORY);
   const [query, setQuery] = useState("");
@@ -94,6 +101,24 @@ export default function MenuPage() {
   return (
     <div className="mx-auto w-full max-w-6xl flex-1 px-4 py-8 sm:px-6">
       <h1 className="mb-6 font-display text-h3 text-fg">{t("allItems")}</h1>
+
+      {selectedCategory === ALL_CATEGORY && !query ? (
+        <div className="mb-8 flex flex-col gap-8">
+          {personalized && personalized.items.length > 0 ? (
+            <RecommendationRow
+              title={t("recommendedForYou")}
+              items={personalized.items}
+              locale={locale}
+            />
+          ) : (
+            <RecommendationRow
+              title={t("trending")}
+              items={trending?.items ?? []}
+              locale={locale}
+            />
+          )}
+        </div>
+      ) : null}
 
       <div className="mb-6 flex flex-col gap-4">
         <Input

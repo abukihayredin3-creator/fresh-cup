@@ -62,7 +62,12 @@
     "modifierRequired": "ያስፈልጋል — {min} ይምረጡ",
     "modifierOptional": "አማራጭ",
     "favoriteAdd": "ወደ ተወዳጆች ጨምር",
-    "favoriteRemove": "ከተወዳጆች አስወግድ"
+    "favoriteRemove": "ከተወዳጆች አስወግድ",
+    "frequentlyBoughtTogether": "አብረው ብዙ ጊዜ የሚገዙ",
+    "similarItems": "ሊወዱት የሚችሉት",
+    "trending": "አሁን ተወዳጅ",
+    "seasonalPicks": "የወቅት ምርጫዎች",
+    "recommendedForYou": "ለእርስዎ የተመከሩ"
   },
   "cart": {
     "title": "የእርስዎ ጋሪ",
@@ -77,7 +82,8 @@
     "itemCountOther": "{count} ዕቃዎች",
     "checkout": "ወደ ክፍያ ግባ",
     "clearCart": "ጋሪ አጽዳ",
-    "clearCartConfirm": "ከጋሪዎ ውስጥ ሁሉንም ነገር ማስወገድ ይፈልጋሉ?"
+    "clearCartConfirm": "ከጋሪዎ ውስጥ ሁሉንም ነገር ማስወገድ ይፈልጋሉ?",
+    "customersAlsoOrdered": "ደንበኞች እንዲሁም ያዘዙት"
   },
   "checkout": {
     "title": "ክፍያ",

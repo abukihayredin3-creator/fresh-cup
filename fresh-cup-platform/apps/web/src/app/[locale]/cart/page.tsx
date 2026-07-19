@@ -12,10 +12,12 @@ import {
   useToast,
 } from "@fresh-cup/ui";
 import { useLocale, useTranslations } from "next-intl";
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { RecommendationRow } from "@/components/RecommendationRow";
 import { Link, useRouter } from "@/i18n/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { useCart } from "@/lib/cart-context";
+import { useCartRecommendations } from "@/lib/use-recommendations";
 
 export default function CartPage() {
   // next-intl's useLocale() isn't narrowed to our locale union without global module
@@ -29,6 +31,9 @@ export default function CartPage() {
   const { cart, isLoading, updateItem, removeItem, clear, isMutating } = useCart();
   const toast = useToast();
   const [confirmClear, setConfirmClear] = useState(false);
+
+  const cartMenuItemIds = useMemo(() => cart?.items.map((item) => item.menuItemId) ?? [], [cart]);
+  const { data: crossSell } = useCartRecommendations(cartMenuItemIds);
 
   if (isReady && !user) {
     return (
@@ -155,6 +160,14 @@ export default function CartPage() {
           </li>
         ))}
       </ul>
+
+      <div className="mt-8">
+        <RecommendationRow
+          title={t("customersAlsoOrdered")}
+          items={crossSell?.items ?? []}
+          locale={locale}
+        />
+      </div>
 
       <div className="mt-8 flex flex-col gap-4 border-t border-border pt-6">
         <div className="flex items-center justify-between text-h5 font-medium text-fg">
