@@ -3,6 +3,7 @@ import type { EnvironmentVariables } from "../../common/config/env.validation";
 import type { PrismaService } from "../../database/prisma.service";
 import type { ExecutiveAiService } from "../services/executive-ai/executive-ai.service";
 import type { EmbeddingBackfillWorker } from "../workers/embedding-backfill.worker";
+import type { KnowledgeBaseIndexWorker } from "../workers/knowledge-base-index.worker";
 import { AiDailyDigestScheduler } from "./ai-daily-digest.scheduler";
 
 describe("AiDailyDigestScheduler", () => {
@@ -16,10 +17,19 @@ describe("AiDailyDigestScheduler", () => {
     const embeddingBackfill = {
       run: jest.fn().mockResolvedValue(0),
     } as unknown as jest.Mocked<EmbeddingBackfillWorker>;
+    const knowledgeBaseIndex = {
+      run: jest.fn().mockResolvedValue(0),
+    } as unknown as jest.Mocked<KnowledgeBaseIndexWorker>;
     const config = { get: () => enabled } as unknown as ConfigService<EnvironmentVariables, true>;
 
-    const scheduler = new AiDailyDigestScheduler(config, prisma, executiveAi, embeddingBackfill);
-    return { scheduler, prisma, executiveAi, embeddingBackfill };
+    const scheduler = new AiDailyDigestScheduler(
+      config,
+      prisma,
+      executiveAi,
+      embeddingBackfill,
+      knowledgeBaseIndex,
+    );
+    return { scheduler, prisma, executiveAi, embeddingBackfill, knowledgeBaseIndex };
   }
 
   it("does nothing when AI_EXECUTIVE_ENABLED is false", async () => {
@@ -28,8 +38,8 @@ describe("AiDailyDigestScheduler", () => {
     expect(prisma.branch.findMany).not.toHaveBeenCalled();
   });
 
-  it("summarizes every active branch plus the all-branches aggregate, and runs the backfill worker", async () => {
-    const { scheduler, executiveAi, embeddingBackfill } = makeScheduler(true, [
+  it("summarizes every active branch plus the all-branches aggregate, and runs both backfill workers", async () => {
+    const { scheduler, executiveAi, embeddingBackfill, knowledgeBaseIndex } = makeScheduler(true, [
       { id: "b1" },
       { id: "b2" },
     ]);
@@ -49,6 +59,7 @@ describe("AiDailyDigestScheduler", () => {
       undefined,
     );
     expect(embeddingBackfill.run).toHaveBeenCalled();
+    expect(knowledgeBaseIndex.run).toHaveBeenCalled();
   });
 
   it("continues to remaining branches if one branch's summary throws", async () => {

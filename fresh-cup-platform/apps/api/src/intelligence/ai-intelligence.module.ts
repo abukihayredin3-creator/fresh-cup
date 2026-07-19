@@ -1,5 +1,7 @@
 import { Module } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { JwtModule } from "@nestjs/jwt";
+import type { EnvironmentVariables } from "../common/config/env.validation";
 import { IntelligenceModule } from "../modules/intelligence/intelligence.module";
 import { CatalogModule } from "../modules/catalog/catalog.module";
 import { MarketingModule } from "../modules/marketing/marketing.module";
@@ -38,6 +40,8 @@ import { EvaluationTrackerService } from "./evaluation-tracker/evaluation-tracke
 import { GovernanceController } from "./governance/governance.controller";
 import { PolicyEngineService } from "./governance/policy-engine.service";
 import { PromptRegistryService } from "./governance/prompt-registry.service";
+import { CopilotGateway } from "./websockets/copilot.gateway";
+import { KnowledgeBaseIndexWorker } from "./workers/knowledge-base-index.worker";
 import { AssistantAiController } from "./controllers/assistant-ai.controller";
 import { AiMemoryController } from "./controllers/ai-memory.controller";
 import { CustomerAiController } from "./controllers/customer-ai.controller";
@@ -114,6 +118,12 @@ import { EmbeddingBackfillWorker } from "./workers/embedding-backfill.worker";
     MarketingModule,
     PaymentsModule,
     PurchasingModule,
+    JwtModule.registerAsync({
+      inject: [ConfigService],
+      useFactory: (config: ConfigService<EnvironmentVariables, true>) => ({
+        secret: config.get("JWT_ACCESS_SECRET", { infer: true }),
+      }),
+    }),
   ],
   controllers: [
     ApprovalsController,
@@ -165,6 +175,8 @@ import { EmbeddingBackfillWorker } from "./workers/embedding-backfill.worker";
     EvaluationTrackerService,
     PolicyEngineService,
     PromptRegistryService,
+    CopilotGateway,
+    KnowledgeBaseIndexWorker,
     {
       provide: LLM_PROVIDER_TOKEN,
       useFactory: createLlmProvider,

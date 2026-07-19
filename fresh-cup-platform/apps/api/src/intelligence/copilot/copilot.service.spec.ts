@@ -110,4 +110,16 @@ describe("CopilotService", () => {
     expect(response.forecast?.prediction).toBe(50000);
     expect(response.explanation).toBe("Revenue is steady this week.");
   });
+
+  it("calls onStep once per finished step, in order, before the final response resolves", async () => {
+    const { service } = makeService();
+    const seen: string[] = [];
+
+    const response = await service.ask(ACTOR, "How was this week?", "b1", (step) => {
+      seen.push(step.step);
+    });
+
+    expect(seen).toEqual(response.steps.map((s) => s.step));
+    expect(seen).toEqual(["collect", "analyze_compare", "forecast", "explain", "recommend"]);
+  });
 });

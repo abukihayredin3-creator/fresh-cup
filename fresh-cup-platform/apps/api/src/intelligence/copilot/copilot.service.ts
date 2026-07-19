@@ -24,6 +24,10 @@ import type { CopilotRecommendation, CopilotResponse, CopilotStep } from "./copi
  *                      insights re-framed as "worth a closer look"
  * This is deliberately not a single LLM call — the steps are always run
  * and always return real data, whether or not LLM_PROVIDER is configured.
+ * The optional `onStep` callback fires the moment each step actually
+ * finishes — `CopilotGateway` uses it for real step-by-step WebSocket
+ * streaming (not token-level LLM streaming, which no `LlmProvider`
+ * implementation in this platform exposes yet).
  */
 @Injectable()
 export class CopilotService {
@@ -34,12 +38,21 @@ export class CopilotService {
     private readonly explanation: ExplanationService,
   ) {}
 
-  async ask(actor: RequestUser, question: string, branchId?: string): Promise<CopilotResponse> {
+  async ask(
+    actor: RequestUser,
+    question: string,
+    branchId?: string,
+    onStep?: (step: CopilotStep) => void,
+  ): Promise<CopilotResponse> {
     const steps: CopilotStep[] = [];
+    const pushStep = (step: CopilotStep) => {
+      steps.push(step);
+      onStep?.(step);
+    };
 
     let started = Date.now();
     const coordinatorResult = await this.coordinator.ask(actor, question, branchId);
-    steps.push({
+    pushStep({
       step: "collect",
       label: "Collect data from the relevant specialized agents",
       tookMs: Date.now() - started,
@@ -48,7 +61,7 @@ export class CopilotService {
 
     started = Date.now();
     const decisionReport = await this.decisionEngine.detectSalesDrop(actor, branchId, false);
-    steps.push({
+    pushStep({
       step: "analyze_compare",
       label: "Analyze and compare this week to last week",
       tookMs: Date.now() - started,
@@ -59,7 +72,7 @@ export class CopilotService {
 
     started = Date.now();
     const forecast = await this.forecasting.revenue(branchId);
-    steps.push({
+    pushStep({
       step: "forecast",
       label: "Forecast the next period",
       tookMs: Date.now() - started,
@@ -73,7 +86,7 @@ export class CopilotService {
       revenueChangePercent: decisionReport?.changePercent ?? 0,
       forecastEtb: forecast.prediction,
     });
-    steps.push({
+    pushStep({
       step: "explain",
       label: "Generate a plain-language explanation",
       tookMs: Date.now() - started,
@@ -82,7 +95,7 @@ export class CopilotService {
 
     started = Date.now();
     const recommendations = this.buildRecommendations(coordinatorResult, decisionReport);
-    steps.push({
+    pushStep({
       step: "recommend",
       label: "Recommend actions",
       tookMs: Date.now() - started,

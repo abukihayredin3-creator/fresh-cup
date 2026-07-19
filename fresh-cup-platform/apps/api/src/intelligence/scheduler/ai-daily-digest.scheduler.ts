@@ -7,6 +7,7 @@ import type { RequestUser } from "../../common/types/request-user.interface";
 import { PrismaService } from "../../database/prisma.service";
 import { ExecutiveAiService } from "../services/executive-ai/executive-ai.service";
 import { EmbeddingBackfillWorker } from "../workers/embedding-backfill.worker";
+import { KnowledgeBaseIndexWorker } from "../workers/knowledge-base-index.worker";
 
 /** ADMIN bypasses branch-scoping (see common/access/branch-access.util.ts) — the correct scope for a background job with no human operator. */
 const SYSTEM_ACTOR: RequestUser = { id: "system", role: UserRole.ADMIN, branchId: null };
@@ -27,6 +28,7 @@ export class AiDailyDigestScheduler {
     private readonly prisma: PrismaService,
     private readonly executiveAi: ExecutiveAiService,
     private readonly embeddingBackfill: EmbeddingBackfillWorker,
+    private readonly knowledgeBaseIndex: KnowledgeBaseIndexWorker,
   ) {}
 
   @Cron(CronExpression.EVERY_DAY_AT_3AM)
@@ -49,6 +51,13 @@ export class AiDailyDigestScheduler {
     if (backfilled > 0) {
       this.logger.log(
         `Backfilled ${backfilled} memory entr${backfilled === 1 ? "y" : "ies"} into the vector store`,
+      );
+    }
+
+    const knowledgeBackfilled = await this.knowledgeBaseIndex.run();
+    if (knowledgeBackfilled > 0) {
+      this.logger.log(
+        `Backfilled ${knowledgeBackfilled} knowledge document${knowledgeBackfilled === 1 ? "" : "s"} into the vector store`,
       );
     }
   }
