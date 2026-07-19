@@ -32,7 +32,17 @@ const MERKATO_BRANCH = {
 async function seedBranch() {
   const existing = await prisma.branch.findFirst({ where: { name: MERKATO_BRANCH.name } });
   if (existing) return existing;
-  return prisma.branch.create({ data: MERKATO_BRANCH });
+  return prisma.branch.create({
+    data: {
+      ...MERKATO_BRANCH,
+      organization: {
+        connectOrCreate: {
+          where: { slug: "fresh-cup" },
+          create: { name: "Fresh Cup", slug: "fresh-cup", status: "ACTIVE" },
+        },
+      },
+    },
+  });
 }
 
 async function seedDevUser(options: {

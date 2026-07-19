@@ -22,6 +22,12 @@ export async function createTestBranch(prisma: PrismaService): Promise<Branch> {
     data: {
       name: `Test Branch ${uniqueSuffix()}`,
       addressText: "123 Test Street, Addis Ababa",
+      organization: {
+        connectOrCreate: {
+          where: { slug: "e2e-test-org" },
+          create: { name: "E2E Test Org", slug: "e2e-test-org" },
+        },
+      },
     },
   });
 }

@@ -27,8 +27,14 @@ export class BranchesService {
     return branch;
   }
 
-  create(dto: CreateBranchDto): Promise<Branch> {
-    return this.prisma.branch.create({ data: dto });
+  /**
+   * `organizationId` isn't part of CreateBranchDto — Phase 8 Part 1 made
+   * every Branch belong to an Organization, and a brand-new branch always
+   * joins the creating admin's own organization (resolved by the caller
+   * via TenantContextService), never an arbitrary one passed in the body.
+   */
+  create(dto: CreateBranchDto, organizationId: string): Promise<Branch> {
+    return this.prisma.branch.create({ data: { ...dto, organizationId } });
   }
 
   async update(id: string, dto: UpdateBranchDto): Promise<Branch> {

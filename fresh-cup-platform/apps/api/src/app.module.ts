@@ -10,6 +10,7 @@ import { AppThrottlerGuard } from "./common/guards/app-throttler.guard";
 import { JwtAuthGuard } from "./common/guards/jwt-auth.guard";
 import { RolesGuard } from "./common/guards/roles.guard";
 import { PrismaModule } from "./database/prisma.module";
+import { EnterpriseModule } from "./enterprise/enterprise.module";
 import { AiIntelligenceModule } from "./intelligence/ai-intelligence.module";
 import { AddressesModule } from "./modules/addresses/addresses.module";
 import { AnalyticsModule } from "./modules/analytics/analytics.module";
@@ -79,6 +80,7 @@ import { WebsocketsModule } from "./websockets/websockets.module";
     SecurityModule,
     IntelligenceModule,
     AiIntelligenceModule,
+    EnterpriseModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: AppThrottlerGuard },

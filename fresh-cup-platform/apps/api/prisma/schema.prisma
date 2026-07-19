@@ -17,8 +17,14 @@
 // Phase 11 Part 2: Predictive Intelligence Platform — a standalone model
 // registry (deployment-stage lifecycle + dataset lineage) and drift alerts
 // backing prediction/forecasting/segmentation/drift/training under the same
-// apps/api/src/intelligence/ tree. See
-// fresh-cup-platform/docs/DATABASE_SCHEMA.md and docs/ROADMAP.md.
+// apps/api/src/intelligence/ tree. Phase 11 Part 3: Autonomous Restaurant
+// Intelligence Platform — the Human Approval Layer, workflow engine,
+// knowledge base, and continuous evaluation tables. Phase 8 Part 1:
+// Enterprise & Global Restaurant Platform's Enterprise Foundation —
+// Organization as the tenant root above Branch, Region/Franchise/
+// BranchGroup hierarchy, org-level RBAC, feature flags, licensing, and
+// tenant-scoped global config. See fresh-cup-platform/docs/DATABASE_SCHEMA.md
+// and docs/ROADMAP.md.
 //
 // IDs use Prisma's default (client-generated UUIDv4) rather than a
 // DB-generated UUIDv7: it needs no Postgres extension, works identically
@@ -62,6 +68,32 @@ enum UserRole {
 enum Locale {
   EN
   AM
+}
+
+enum OrganizationStatus {
+  TRIAL
+  ACTIVE
+  SUSPENDED
+  CANCELLED
+}
+
+/// Org-level roles, layered on top of the existing branch-scoped UserRole
+/// (a user can be e.g. MANAGER on their branch's UserRole while also
+/// holding ORG_ADMIN via an OrganizationMembership row) — see
+/// docs/ROADMAP.md's Phase 8 Part 1 notes for why this is a second,
+/// additive role axis rather than a rewrite of UserRole.
+enum OrgRole {
+  ORG_OWNER
+  ORG_ADMIN
+  FRANCHISE_ADMIN
+  REGION_MANAGER
+}
+
+enum SubscriptionStatus {
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  CANCELLED
 }
 
 enum InventoryUnit {
@@ -248,41 +280,57 @@ enum AiQueryOutcome {
 // ---------------------------------------------------------------------------
 
 model Branch {
-  id          String   @id @default(uuid())
-  name        String
-  addressText String   @map("address_text")
-  lat         Decimal? @db.Decimal(9, 6)
-  lng         Decimal? @db.Decimal(9, 6)
-  phone       String?
-  isActive    Boolean  @default(true) @map("is_active")
-  managerId   String?  @map("manager_id")
-  manager     User?    @relation("BranchManager", fields: [managerId], references: [id], onDelete: SetNull)
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  id             String       @id @default(uuid())
+  name           String
+  addressText    String       @map("address_text")
+  lat            Decimal?     @db.Decimal(9, 6)
+  lng            Decimal?     @db.Decimal(9, 6)
+  phone          String?
+  isActive       Boolean      @default(true) @map("is_active")
+  managerId      String?      @map("manager_id")
+  manager        User?        @relation("BranchManager", fields: [managerId], references: [id], onDelete: SetNull)
+  /// Phase 8 Part 1 — every Branch belongs to exactly one Organization
+  /// (the tenant root). Required, not nullable: the migration backfills a
+  /// single default Organization for every branch that existed before
+  /// this phase, so tenant scoping is real from row one rather than an
+  /// opt-in nullable column.
+  organizationId String       @map("organization_id")
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  regionId       String?      @map("region_id")
+  region         Region?      @relation(fields: [regionId], references: [id], onDelete: SetNull)
+  franchiseId    String?      @map("franchise_id")
+  franchise      Franchise?   @relation(fields: [franchiseId], references: [id], onDelete: SetNull)
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
 
-  users              User[]
-  menuCategories     MenuCategory[]
-  menuItems          MenuItem[]
-  inventoryItems     InventoryItem[]
-  tables             Table[]
-  modifierGroups     ModifierGroup[]
-  carts              Cart[]
-  orders             Order[]
-  kitchenStations    KitchenStation[]
-  deliveryZones      DeliveryZone[]
-  deliveries         Delivery[]
-  suppliers          Supplier[]
-  purchaseOrders     PurchaseOrder[]
-  hours              BranchHours[]
-  departments        Department[]
-  shifts             Shift[]
-  attendances        Attendance[]
-  banners            Banner[]
-  forecastSnapshots  ForecastSnapshot[]
-  aiMemoryEntries    AiMemoryEntry[]
-  aiApprovalRequests AiApprovalRequest[]
+  users                  User[]
+  menuCategories         MenuCategory[]
+  menuItems              MenuItem[]
+  inventoryItems         InventoryItem[]
+  tables                 Table[]
+  modifierGroups         ModifierGroup[]
+  carts                  Cart[]
+  orders                 Order[]
+  kitchenStations        KitchenStation[]
+  deliveryZones          DeliveryZone[]
+  deliveries             Delivery[]
+  suppliers              Supplier[]
+  purchaseOrders         PurchaseOrder[]
+  hours                  BranchHours[]
+  departments            Department[]
+  shifts                 Shift[]
+  attendances            Attendance[]
+  banners                Banner[]
+  forecastSnapshots      ForecastSnapshot[]
+  aiMemoryEntries        AiMemoryEntry[]
+  aiApprovalRequests     AiApprovalRequest[]
+  branchGroupMemberships BranchGroupMembership[]
+  featureFlagOverrides   FeatureFlagOverride[]
 
   @@index([managerId])
+  @@index([organizationId])
+  @@index([regionId])
+  @@index([franchiseId])
   @@map("branches")
 }
 
@@ -349,6 +397,8 @@ model User {
   aiMemoriesAuthored       AiMemoryEntry[]           @relation("AiMemoryAuthor")
   aiApprovalsReviewed      AiApprovalRequest[]       @relation("AiApprovalReviewer")
   aiRecommendationsDecided AiRecommendationOutcome[] @relation("AiRecommendationDecider")
+  organizationMemberships  OrganizationMembership[]
+  franchisesOwned          Franchise[]               @relation("FranchiseOwner")
 
   @@index([branchId])
   @@index([departmentId])
@@ -1811,4 +1861,224 @@ model AiRecommendationOutcome {
 
   @@index([source, status])
   @@map("ai_recommendation_outcomes")
+}
+
+// ---------------------------------------------------------------------------
+// Enterprise & Global Restaurant Platform (Phase 8 Part 1) — Enterprise
+// Foundation: multi-tenant architecture, organization/franchise/region
+// hierarchy, feature flags, licensing, global config. See
+// docs/ROADMAP.md's Phase 8 section for the additive-tenancy scope
+// decision this section implements.
+// ---------------------------------------------------------------------------
+
+/// The tenant root. Every Branch belongs to exactly one Organization
+/// (see the Branch model). One Organization existed implicitly before
+/// this phase — the migration backfills it as "Fresh Cup" so every
+/// pre-existing branch/user keeps working unchanged.
+model Organization {
+  id                    String             @id @default(uuid())
+  name                  String
+  slug                  String             @unique
+  domain                String?            @unique
+  status                OrganizationStatus @default(TRIAL)
+  timezone              String             @default("Africa/Addis_Ababa")
+  defaultLocale         Locale             @default(EN) @map("default_locale")
+  defaultCurrencyCode   String             @default("ETB") @map("default_currency_code")
+  onboardingCompletedAt DateTime?          @map("onboarding_completed_at")
+  createdAt             DateTime           @default(now()) @map("created_at")
+  updatedAt             DateTime           @updatedAt @map("updated_at")
+
+  branches             Branch[]
+  regions              Region[]
+  franchises           Franchise[]
+  branchGroups         BranchGroup[]
+  memberships          OrganizationMembership[]
+  featureFlagOverrides FeatureFlagOverride[]
+  subscription         OrganizationSubscription?
+  globalConfigEntries  GlobalConfigEntry[]
+
+  @@map("organizations")
+}
+
+/// A geographic/administrative grouping of branches within an
+/// Organization (e.g. "Addis Ababa", "Oromia") — distinct from Franchise,
+/// which groups branches by ownership rather than geography.
+model Region {
+  id             String       @id @default(uuid())
+  organizationId String       @map("organization_id")
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name           String
+  code           String
+  countryCode    String       @map("country_code")
+  timezone       String
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+
+  branches Branch[]
+
+  @@unique([organizationId, code])
+  @@map("regions")
+}
+
+/// A franchisee-operated grouping of branches within an Organization.
+/// `ownerUserId` is the franchise owner's account; FRANCHISE_ADMIN
+/// OrgRole holders manage a franchise's branches without needing
+/// ORG_ADMIN over the whole tenant.
+model Franchise {
+  id             String       @id @default(uuid())
+  organizationId String       @map("organization_id")
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name           String
+  ownerUserId    String?      @map("owner_user_id")
+  ownerUser      User?        @relation("FranchiseOwner", fields: [ownerUserId], references: [id], onDelete: SetNull)
+  isActive       Boolean      @default(true) @map("is_active")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+
+  branches Branch[]
+
+  @@map("franchises")
+}
+
+/// A free-form, many-to-many branch grouping (e.g. "high-volume
+/// branches", "pilot locations") — distinct from Region/Franchise, which
+/// are each a branch's single geographic/ownership parent. A branch can
+/// belong to any number of BranchGroups.
+model BranchGroup {
+  id             String       @id @default(uuid())
+  organizationId String       @map("organization_id")
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name           String
+  description    String?
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+
+  memberships BranchGroupMembership[]
+
+  @@unique([organizationId, name])
+  @@map("branch_groups")
+}
+
+model BranchGroupMembership {
+  id            String      @id @default(uuid())
+  branchGroupId String      @map("branch_group_id")
+  branchGroup   BranchGroup @relation(fields: [branchGroupId], references: [id], onDelete: Cascade)
+  branchId      String      @map("branch_id")
+  branch        Branch      @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  createdAt     DateTime    @default(now()) @map("created_at")
+
+  @@unique([branchGroupId, branchId])
+  @@map("branch_group_memberships")
+}
+
+/// Org-level role grant — see the OrgRole enum comment for why this is a
+/// second, additive role axis on top of the existing branch-scoped
+/// UserRole rather than a replacement for it.
+model OrganizationMembership {
+  id             String       @id @default(uuid())
+  organizationId String       @map("organization_id")
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId         String       @map("user_id")
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role           OrgRole
+  createdAt      DateTime     @default(now()) @map("created_at")
+
+  @@unique([organizationId, userId])
+  @@map("organization_memberships")
+}
+
+/// The global registry of feature flag keys this platform knows about —
+/// `defaultEnabled` is what a flag evaluates to when no
+/// FeatureFlagOverride exists for the organization/branch being checked.
+model FeatureFlagDefinition {
+  id             String   @id @default(uuid())
+  key            String   @unique
+  name           String
+  description    String?
+  defaultEnabled Boolean  @default(false) @map("default_enabled")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  overrides FeatureFlagOverride[]
+
+  @@map("feature_flag_definitions")
+}
+
+/// An organization- (or, optionally, branch-) scoped override of a
+/// feature flag's default. `rolloutPercentage` supports a partial rollout
+/// (deterministically hashed by entity id in FeatureFlagsService, not
+/// randomized per request) when `enabled` is true but the flag should
+/// only apply to a fraction of eligible branches.
+model FeatureFlagOverride {
+  id                String                @id @default(uuid())
+  organizationId    String                @map("organization_id")
+  organization      Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  featureFlagId     String                @map("feature_flag_id")
+  featureFlag       FeatureFlagDefinition @relation(fields: [featureFlagId], references: [id], onDelete: Cascade)
+  branchId          String?               @map("branch_id")
+  branch            Branch?               @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  enabled           Boolean
+  rolloutPercentage Int?                  @map("rollout_percentage")
+  createdAt         DateTime              @default(now()) @map("created_at")
+  updatedAt         DateTime              @updatedAt @map("updated_at")
+
+  @@unique([organizationId, featureFlagId, branchId])
+  @@map("feature_flag_overrides")
+}
+
+/// A sellable plan tier. `features` is a JSON array of feature flag keys
+/// entitled by this plan — `LicenseService.isEntitled()` checks it before
+/// a FeatureFlagOverride is even consulted, so a plan downgrade can
+/// disable a feature without deleting its override rows.
+model SubscriptionPlan {
+  id                String   @id @default(uuid())
+  key               String   @unique
+  name              String
+  maxBranches       Int?     @map("max_branches")
+  maxUsers          Int?     @map("max_users")
+  priceMonthlyMinor Int?     @map("price_monthly_minor")
+  features          Json
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  subscriptions OrganizationSubscription[]
+
+  @@map("subscription_plans")
+}
+
+/// One active subscription per Organization. `seats` is the licensed
+/// user count `LicenseService.checkSeatLimit()` enforces against actual
+/// active User rows in that organization's branches.
+model OrganizationSubscription {
+  id                 String             @id @default(uuid())
+  organizationId     String             @unique @map("organization_id")
+  organization       Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  planId             String             @map("plan_id")
+  plan               SubscriptionPlan   @relation(fields: [planId], references: [id])
+  status             SubscriptionStatus @default(TRIALING)
+  seats              Int                @default(1)
+  currentPeriodStart DateTime           @map("current_period_start")
+  currentPeriodEnd   DateTime           @map("current_period_end")
+  trialEndsAt        DateTime?          @map("trial_ends_at")
+  cancelledAt        DateTime?          @map("cancelled_at")
+  createdAt          DateTime           @default(now()) @map("created_at")
+  updatedAt          DateTime           @updatedAt @map("updated_at")
+
+  @@map("organization_subscriptions")
+}
+
+/// Tenant-scoped key-value configuration store (branding, defaults,
+/// integration settings) — deliberately untyped JSON `value` rather than
+/// a column-per-setting table, since the set of settings an enterprise
+/// tenant wants to override is open-ended and growing this by migration
+/// every time would defeat the point of a "global configuration service."
+model GlobalConfigEntry {
+  id             String       @id @default(uuid())
+  organizationId String       @map("organization_id")
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  key            String
+  value          Json
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+
+  @@unique([organizationId, key])
+  @@map("global_config_entries")
 }
