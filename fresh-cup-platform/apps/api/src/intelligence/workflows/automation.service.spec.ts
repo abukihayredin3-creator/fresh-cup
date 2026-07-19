@@ -125,7 +125,7 @@ describe("AutomationService", () => {
     async (method, depKey, depMethod, agent) => {
       const deps = makeService();
       const service = deps.service;
-      const dep = deps[depKey] as Record<string, jest.Mock>;
+      const dep = deps[depKey] as unknown as Record<string, jest.Mock>;
       (dep[depMethod] as jest.Mock).mockResolvedValue([insight("Add one more line cook")]);
 
       await service[method]("b1");

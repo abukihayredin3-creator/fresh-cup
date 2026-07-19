@@ -30,6 +30,9 @@ import { AutomationController } from "./workflows/automation.controller";
 import { AutomationService } from "./workflows/automation.service";
 import { WorkflowEngineService } from "./workflows/workflow-engine.service";
 import { WorkflowsController } from "./workflows/workflows.controller";
+import { DigitalTwinService } from "./simulator/digital-twin.service";
+import { ScenarioSimulatorService } from "./simulator/scenario-simulator.service";
+import { SimulatorController } from "./simulator/simulator.controller";
 import { AssistantAiController } from "./controllers/assistant-ai.controller";
 import { AiMemoryController } from "./controllers/ai-memory.controller";
 import { CustomerAiController } from "./controllers/customer-ai.controller";
@@ -115,6 +118,7 @@ import { EmbeddingBackfillWorker } from "./workers/embedding-backfill.worker";
     KnowledgeBaseController,
     WorkflowsController,
     AutomationController,
+    SimulatorController,
     ExecutiveAiController,
     SalesAiController,
     CustomerAiController,
@@ -149,6 +153,8 @@ import { EmbeddingBackfillWorker } from "./workers/embedding-backfill.worker";
     KnowledgeBaseService,
     WorkflowEngineService,
     AutomationService,
+    ScenarioSimulatorService,
+    DigitalTwinService,
     {
       provide: LLM_PROVIDER_TOKEN,
       useFactory: createLlmProvider,
