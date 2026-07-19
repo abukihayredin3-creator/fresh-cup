@@ -1,11 +1,13 @@
-import { Body, Controller, Get, Param, Post, Query } from "@nestjs/common";
+import { Body, Controller, Get, Param, Patch, Post, Query } from "@nestjs/common";
 import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { UserRole } from "@prisma/client";
 import { Auditable } from "../../../common/audit/auditable.decorator";
 import { CurrentUser } from "../../../common/decorators/current-user.decorator";
 import { Roles } from "../../../common/decorators/roles.decorator";
 import type { RequestUser } from "../../../common/types/request-user.interface";
+import { AttachInvoiceDto } from "./dto/attach-invoice.dto";
 import { CreatePurchaseOrderDto } from "./dto/create-purchase-order.dto";
+import { CreatePurchaseOrderPaymentDto } from "./dto/create-purchase-order-payment.dto";
 import { ListPurchaseOrdersQueryDto } from "./dto/list-purchase-orders-query.dto";
 import { PurchaseOrderResponseDto } from "./dto/purchase-order-response.dto";
 import { ReceivePurchaseOrderDto } from "./dto/receive-purchase-order.dto";
@@ -79,6 +81,32 @@ export class PurchaseOrdersController {
     @Param("id") id: string,
   ): Promise<PurchaseOrderResponseDto> {
     const updated = await this.purchaseOrdersService.cancel(actor, id);
+    return this.purchaseOrdersService.toResponse(updated);
+  }
+
+  @Patch(":id/invoice")
+  @Roles(UserRole.MANAGER, UserRole.ADMIN)
+  @ApiOperation({ summary: "Attach an invoice reference to a purchase order (manager/admin)" })
+  @ApiOkResponse({ type: PurchaseOrderResponseDto })
+  async attachInvoice(
+    @CurrentUser() actor: RequestUser,
+    @Param("id") id: string,
+    @Body() dto: AttachInvoiceDto,
+  ): Promise<PurchaseOrderResponseDto> {
+    const updated = await this.purchaseOrdersService.attachInvoice(actor, id, dto);
+    return this.purchaseOrdersService.toResponse(updated);
+  }
+
+  @Post(":id/payments")
+  @Roles(UserRole.MANAGER, UserRole.ADMIN)
+  @ApiOperation({ summary: "Record a payment against a purchase order (manager/admin)" })
+  @ApiOkResponse({ type: PurchaseOrderResponseDto })
+  async addPayment(
+    @CurrentUser() actor: RequestUser,
+    @Param("id") id: string,
+    @Body() dto: CreatePurchaseOrderPaymentDto,
+  ): Promise<PurchaseOrderResponseDto> {
+    const updated = await this.purchaseOrdersService.addPayment(actor, id, dto);
     return this.purchaseOrdersService.toResponse(updated);
   }
 }

@@ -10,12 +10,14 @@ import { assertBranchAccess } from "../../../common/access/branch-access.util";
 import { paginate } from "../../../common/pagination/paginate";
 import type { RequestUser } from "../../../common/types/request-user.interface";
 import { PrismaService } from "../../../database/prisma.service";
+import type { AttachInvoiceDto } from "./dto/attach-invoice.dto";
 import type { CreatePurchaseOrderDto } from "./dto/create-purchase-order.dto";
+import type { CreatePurchaseOrderPaymentDto } from "./dto/create-purchase-order-payment.dto";
 import type { ListPurchaseOrdersQueryDto } from "./dto/list-purchase-orders-query.dto";
 import type { PurchaseOrderResponseDto } from "./dto/purchase-order-response.dto";
 import type { ReceivePurchaseOrderDto } from "./dto/receive-purchase-order.dto";
 
-const WITH_LINES = { lines: true } as const;
+const WITH_LINES = { lines: true, payments: true } as const;
 type PurchaseOrderDetail = Prisma.PurchaseOrderGetPayload<{ include: typeof WITH_LINES }>;
 
 @Injectable()
@@ -183,6 +185,39 @@ export class PurchaseOrdersService {
     return this.findByIdOrThrow(id);
   }
 
+  /** Records an entered/uploaded invoice reference for the PO — no OCR or accounting integration. */
+  async attachInvoice(
+    actor: RequestUser,
+    id: string,
+    dto: AttachInvoiceDto,
+  ): Promise<PurchaseOrderDetail> {
+    const order = await this.findByIdOrThrow(id);
+    assertBranchAccess(actor, order.branchId);
+    return this.prisma.purchaseOrder.update({
+      where: { id },
+      data: { invoiceNumber: dto.invoiceNumber, invoiceUrl: dto.invoiceUrl },
+      include: WITH_LINES,
+    });
+  }
+
+  async addPayment(
+    actor: RequestUser,
+    id: string,
+    dto: CreatePurchaseOrderPaymentDto,
+  ): Promise<PurchaseOrderDetail> {
+    const order = await this.findByIdOrThrow(id);
+    assertBranchAccess(actor, order.branchId);
+    await this.prisma.purchaseOrderPayment.create({
+      data: {
+        purchaseOrderId: id,
+        amount: dto.amount,
+        method: dto.method,
+        note: dto.note,
+      },
+    });
+    return this.findByIdOrThrow(id);
+  }
+
   toResponse(order: PurchaseOrderDetail): PurchaseOrderResponseDto {
     return {
       id: order.id,
@@ -193,6 +228,8 @@ export class PurchaseOrdersService {
       createdByUserId: order.createdByUserId,
       submittedAt: order.submittedAt,
       receivedAt: order.receivedAt,
+      invoiceNumber: order.invoiceNumber,
+      invoiceUrl: order.invoiceUrl,
       createdAt: order.createdAt,
       updatedAt: order.updatedAt,
       lines: order.lines.map((line: PurchaseOrderLine) => ({
@@ -202,6 +239,15 @@ export class PurchaseOrdersService {
         unitCost: line.unitCost,
         quantityReceived: line.quantityReceived !== null ? Number(line.quantityReceived) : null,
       })),
+      payments: order.payments.map((payment) => ({
+        id: payment.id,
+        purchaseOrderId: payment.purchaseOrderId,
+        amount: payment.amount,
+        method: payment.method,
+        note: payment.note,
+        paidAt: payment.paidAt,
+      })),
+      totalPaid: order.payments.reduce((sum, payment) => sum + payment.amount, 0),
     };
   }
 }

@@ -13,7 +13,7 @@ import type { AdminUpdateUserDto } from "./dto/admin-update-user.dto";
 import type { CreateStaffUserDto } from "./dto/create-staff-user.dto";
 import type { ListUsersQueryDto } from "./dto/list-users-query.dto";
 import type { UpdateProfileDto } from "./dto/update-profile.dto";
-import type { UserResponseDto } from "./dto/user-response.dto";
+import type { AdminUserResponseDto, UserResponseDto } from "./dto/user-response.dto";
 
 @Injectable()
 export class UsersService {
@@ -107,6 +107,9 @@ export class UsersService {
     if (dto.role && actor.role !== UserRole.ADMIN) {
       throw new ForbiddenException("Only an admin can change a user's role");
     }
+    if ((dto.isOwner !== undefined || dto.salary !== undefined) && actor.role !== UserRole.ADMIN) {
+      throw new ForbiddenException("Only an admin can change owner status or salary");
+    }
 
     return this.prisma.user.update({
       where: { id: targetId },
@@ -142,6 +145,16 @@ export class UsersService {
       locale: user.locale,
       isActive: user.isActive,
       createdAt: user.createdAt,
+    };
+  }
+
+  toAdminResponse(user: User): AdminUserResponseDto {
+    return {
+      ...this.toResponse(user),
+      isOwner: user.isOwner,
+      departmentId: user.departmentId,
+      salary: user.salary ? Number(user.salary) : null,
+      twoFactorEnabled: user.twoFactorEnabled,
     };
   }
 }

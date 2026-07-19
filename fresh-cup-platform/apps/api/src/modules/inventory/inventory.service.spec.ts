@@ -14,8 +14,13 @@ import { InventoryService } from "./inventory.service";
 describe("InventoryService", () => {
   let service: InventoryService;
   let prisma: {
-    inventoryItem: { findUnique: jest.Mock; create: jest.Mock; update: jest.Mock };
-    inventoryTransaction: { create: jest.Mock; findFirst: jest.Mock };
+    inventoryItem: {
+      findUnique: jest.Mock;
+      findMany: jest.Mock;
+      create: jest.Mock;
+      update: jest.Mock;
+    };
+    inventoryTransaction: { create: jest.Mock; findFirst: jest.Mock; findMany: jest.Mock };
     orderItem: { findMany: jest.Mock };
     recipeIngredient: { findMany: jest.Mock };
     $transaction: jest.Mock;
@@ -38,8 +43,13 @@ describe("InventoryService", () => {
 
   beforeEach(() => {
     prisma = {
-      inventoryItem: { findUnique: jest.fn(), create: jest.fn(), update: jest.fn() },
-      inventoryTransaction: { create: jest.fn(), findFirst: jest.fn() },
+      inventoryItem: {
+        findUnique: jest.fn(),
+        findMany: jest.fn(),
+        create: jest.fn(),
+        update: jest.fn(),
+      },
+      inventoryTransaction: { create: jest.fn(), findFirst: jest.fn(), findMany: jest.fn() },
       orderItem: { findMany: jest.fn() },
       recipeIngredient: { findMany: jest.fn() },
       $transaction: jest.fn(),
@@ -154,6 +164,81 @@ describe("InventoryService", () => {
           reason: InventoryTransactionReason.RESTOCK,
         }),
       ).rejects.toThrow(ForbiddenException);
+    });
+  });
+
+  describe("wasteReport", () => {
+    it("aggregates WASTE transactions per item and sums estimated cost", async () => {
+      prisma.inventoryTransaction.findMany.mockResolvedValue([
+        {
+          inventoryItemId: "item-mango",
+          delta: -100,
+          inventoryItem: { name: "Mango", unit: InventoryUnit.GRAM, unitCost: 8 },
+        },
+        {
+          inventoryItemId: "item-mango",
+          delta: -50,
+          inventoryItem: { name: "Mango", unit: InventoryUnit.GRAM, unitCost: 8 },
+        },
+      ]);
+
+      const report = await service.wasteReport({});
+
+      expect(report.items).toHaveLength(1);
+      expect(report.items[0]).toMatchObject({
+        inventoryItemId: "item-mango",
+        totalWasted: 150,
+        estimatedCost: 1200,
+        transactionCount: 2,
+      });
+      expect(report.totalEstimatedCost).toBe(1200);
+    });
+
+    it("returns an empty report when there is no waste in range", async () => {
+      prisma.inventoryTransaction.findMany.mockResolvedValue([]);
+
+      const report = await service.wasteReport({});
+
+      expect(report.items).toEqual([]);
+      expect(report.totalEstimatedCost).toBe(0);
+    });
+  });
+
+  describe("predictedShortages", () => {
+    it("computes avg daily consumption and days until stockout", async () => {
+      prisma.inventoryItem.findMany.mockResolvedValue([{ ...baseItem, currentStock: 700 }]);
+      // 14 units consumed total over the 14-day window -> 1/day average
+      prisma.inventoryTransaction.findMany.mockResolvedValue([
+        { inventoryItemId: baseItem.id, delta: -7 },
+        { inventoryItemId: baseItem.id, delta: -7 },
+      ]);
+
+      const predictions = await service.predictedShortages(branchId);
+
+      expect(predictions).toHaveLength(1);
+      expect(predictions[0]!.avgDailyConsumption).toBeCloseTo(1, 5);
+      expect(predictions[0]!.daysUntilStockout).toBeCloseTo(700, 0);
+    });
+
+    it("still flags an already-low-stock item even with zero recent consumption", async () => {
+      prisma.inventoryItem.findMany.mockResolvedValue([
+        { ...baseItem, currentStock: 100, reorderThreshold: 200 },
+      ]);
+      prisma.inventoryTransaction.findMany.mockResolvedValue([]);
+
+      const predictions = await service.predictedShortages(branchId);
+
+      expect(predictions).toHaveLength(1);
+      expect(predictions[0]!.daysUntilStockout).toBeNull();
+    });
+
+    it("excludes healthy items with no recent consumption", async () => {
+      prisma.inventoryItem.findMany.mockResolvedValue([baseItem]);
+      prisma.inventoryTransaction.findMany.mockResolvedValue([]);
+
+      const predictions = await service.predictedShortages(branchId);
+
+      expect(predictions).toEqual([]);
     });
   });
 

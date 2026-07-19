@@ -2,7 +2,9 @@ import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import {
   ArrayUnique,
   IsArray,
+  IsBoolean,
   IsInt,
+  IsObject,
   IsOptional,
   IsString,
   IsUUID,
@@ -76,4 +78,28 @@ export class CreateMenuItemDto {
   @IsOptional()
   @IsUUID()
   stationId?: string;
+
+  @ApiPropertyOptional({
+    description: "Free-form nutrition facts, e.g. { proteinG: 5, carbsG: 30 }",
+    type: "object",
+    additionalProperties: true,
+  })
+  @IsOptional()
+  @IsObject()
+  nutrition?: Record<string, unknown>;
+
+  @ApiPropertyOptional({ default: false })
+  @IsOptional()
+  @IsBoolean()
+  isPopular?: boolean;
+
+  @ApiPropertyOptional({ default: false })
+  @IsOptional()
+  @IsBoolean()
+  isFeatured?: boolean;
+
+  @ApiPropertyOptional({ default: false })
+  @IsOptional()
+  @IsBoolean()
+  isSeasonal?: boolean;
 }

@@ -45,6 +45,18 @@ export class MenuItemResponseDto {
   @ApiProperty({ nullable: true })
   stationId!: string | null;
 
+  @ApiProperty({ nullable: true, type: "object", additionalProperties: true })
+  nutrition!: Record<string, unknown> | null;
+
+  @ApiProperty()
+  isPopular!: boolean;
+
+  @ApiProperty()
+  isFeatured!: boolean;
+
+  @ApiProperty()
+  isSeasonal!: boolean;
+
   @ApiProperty({ type: [MenuItemImageResponseDto] })
   images!: MenuItemImageResponseDto[];
 

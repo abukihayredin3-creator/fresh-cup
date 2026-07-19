@@ -16,15 +16,20 @@ import { AuthModule } from "./modules/auth/auth.module";
 import { BranchesModule } from "./modules/branches/branches.module";
 import { CatalogModule } from "./modules/catalog/catalog.module";
 import { DeliveryOpsModule } from "./modules/delivery/delivery-ops.module";
+import { EmployeesModule } from "./modules/employees/employees.module";
 import { HealthModule } from "./modules/health/health.module";
 import { InventoryModule } from "./modules/inventory/inventory.module";
 import { KitchenModule } from "./modules/kitchen/kitchen.module";
 import { LoyaltyModule } from "./modules/loyalty/loyalty.module";
+import { MarketingModule } from "./modules/marketing/marketing.module";
 import { NotificationsModule } from "./modules/notifications/notifications.module";
 import { OrderingModule } from "./modules/ordering/ordering.module";
 import { PaymentsModule } from "./modules/payments/payments.module";
 import { PromotionsModule } from "./modules/promotions/promotions.module";
 import { PurchasingModule } from "./modules/purchasing/purchasing.module";
+import { ReviewsModule } from "./modules/reviews/reviews.module";
+import { SecurityModule } from "./modules/security/security.module";
+import { SettingsModule } from "./modules/settings/settings.module";
 import { UsersModule } from "./modules/users/users.module";
 import { RedisModule } from "./redis/redis.module";
 import { WebsocketsModule } from "./websockets/websockets.module";
@@ -60,6 +65,11 @@ import { WebsocketsModule } from "./websockets/websockets.module";
     PurchasingModule,
     AuditModule,
     AnalyticsModule,
+    SettingsModule,
+    EmployeesModule,
+    MarketingModule,
+    ReviewsModule,
+    SecurityModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: AppThrottlerGuard },

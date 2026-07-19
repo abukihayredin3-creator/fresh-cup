@@ -22,6 +22,7 @@ import { AttachModifierGroupDto } from "../modifiers/dto/attach-modifier-group.d
 import { UpdateMenuItemModifierGroupDto } from "../modifiers/dto/update-menu-item-modifier-group.dto";
 import { MenuItemModifierGroupsService } from "../modifiers/menu-item-modifier-groups.service";
 import { AdminListMenuItemsQueryDto } from "./dto/admin-list-menu-items-query.dto";
+import { BulkUpdateMenuItemsDto } from "./dto/bulk-update-menu-items.dto";
 import { CreateMenuItemImageDto } from "./dto/create-menu-item-image.dto";
 import { CreateMenuItemDto } from "./dto/create-menu-item.dto";
 import { ListMenuItemsQueryDto } from "./dto/list-menu-items-query.dto";
@@ -93,6 +94,20 @@ export class MenuItemsController {
   ): Promise<MenuItemResponseDto> {
     const created = await this.menuItemsService.create(actor, dto);
     return this.menuItemsService.toResponse(created);
+  }
+
+  @Patch("admin/menu-items/bulk")
+  @Roles(UserRole.MANAGER, UserRole.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: "Bulk-edit menu items — availability/flags/price/category (manager/admin)",
+  })
+  async bulkUpdate(
+    @CurrentUser() actor: RequestUser,
+    @Body() dto: BulkUpdateMenuItemsDto,
+  ): Promise<{ updatedCount: number }> {
+    const updatedCount = await this.menuItemsService.bulkUpdate(actor, dto);
+    return { updatedCount };
   }
 
   @Patch("admin/menu-items/:id")

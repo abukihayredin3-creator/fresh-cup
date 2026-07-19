@@ -5,6 +5,7 @@ import { paginate } from "../../../common/pagination/paginate";
 import type { RequestUser } from "../../../common/types/request-user.interface";
 import { PrismaService } from "../../../database/prisma.service";
 import type { AdminListMenuItemsQueryDto } from "./dto/admin-list-menu-items-query.dto";
+import type { BulkUpdateMenuItemsDto } from "./dto/bulk-update-menu-items.dto";
 import type { CreateMenuItemDto } from "./dto/create-menu-item.dto";
 import type { ListMenuItemsQueryDto } from "./dto/list-menu-items-query.dto";
 import type { MenuItemResponseDto } from "./dto/menu-item-response.dto";
@@ -38,7 +39,14 @@ export class MenuItemsService {
     return paginate<MenuItemDetail>(
       (page) =>
         this.prisma.menuItem.findMany({
-          where: { branchId, isAvailable: true, categoryId: query.categoryId },
+          where: {
+            branchId,
+            isAvailable: true,
+            categoryId: query.categoryId,
+            isPopular: query.isPopular,
+            isFeatured: query.isFeatured,
+            isSeasonal: query.isSeasonal,
+          },
           orderBy: { sortOrder: "asc" },
           include: WITH_RELATIONS,
           ...page,
@@ -55,6 +63,9 @@ export class MenuItemsService {
             branchId: query.branchId,
             categoryId: query.categoryId,
             isAvailable: query.isAvailable,
+            isPopular: query.isPopular,
+            isFeatured: query.isFeatured,
+            isSeasonal: query.isSeasonal,
           },
           orderBy: { sortOrder: "asc" },
           include: WITH_RELATIONS,
@@ -74,13 +85,38 @@ export class MenuItemsService {
 
   create(actor: RequestUser, dto: CreateMenuItemDto): Promise<MenuItemDetail> {
     assertBranchAccess(actor, dto.branchId);
-    return this.prisma.menuItem.create({ data: dto, include: WITH_RELATIONS });
+    return this.prisma.menuItem.create({
+      data: { ...dto, nutrition: dto.nutrition as Prisma.InputJsonValue | undefined },
+      include: WITH_RELATIONS,
+    });
   }
 
   async update(actor: RequestUser, id: string, dto: UpdateMenuItemDto): Promise<MenuItemDetail> {
     const item = await this.findByIdOrThrow(id);
     assertBranchAccess(actor, item.branchId);
-    return this.prisma.menuItem.update({ where: { id }, data: dto, include: WITH_RELATIONS });
+    return this.prisma.menuItem.update({
+      where: { id },
+      data: { ...dto, nutrition: dto.nutrition as Prisma.InputJsonValue | undefined },
+      include: WITH_RELATIONS,
+    });
+  }
+
+  /** Bulk CMS edit — applies the same patch to every listed item, scoped to the actor's branches. */
+  async bulkUpdate(actor: RequestUser, dto: BulkUpdateMenuItemsDto): Promise<number> {
+    const items = await this.prisma.menuItem.findMany({
+      where: { id: { in: dto.menuItemIds } },
+      select: { id: true, branchId: true },
+    });
+    const branchIds = new Set(items.map((item) => item.branchId));
+    for (const branchId of branchIds) {
+      assertBranchAccess(actor, branchId);
+    }
+
+    const result = await this.prisma.menuItem.updateMany({
+      where: { id: { in: dto.menuItemIds } },
+      data: dto.patch,
+    });
+    return result.count;
   }
 
   async setAvailability(
@@ -120,6 +156,10 @@ export class MenuItemsService {
       sortOrder: item.sortOrder,
       prepTimeSeconds: item.prepTimeSeconds,
       stationId: item.stationId,
+      nutrition: item.nutrition as Record<string, unknown> | null,
+      isPopular: item.isPopular,
+      isFeatured: item.isFeatured,
+      isSeasonal: item.isSeasonal,
       images: item.images.map((image) => ({
         id: image.id,
         url: image.url,

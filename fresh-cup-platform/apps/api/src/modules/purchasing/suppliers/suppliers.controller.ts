@@ -18,6 +18,7 @@ import { Roles } from "../../../common/decorators/roles.decorator";
 import type { RequestUser } from "../../../common/types/request-user.interface";
 import { CreateSupplierDto } from "./dto/create-supplier.dto";
 import { ListSuppliersQueryDto } from "./dto/list-suppliers-query.dto";
+import { SupplierAnalyticsResponseDto } from "./dto/supplier-analytics-response.dto";
 import { SupplierResponseDto } from "./dto/supplier-response.dto";
 import { UpdateSupplierDto } from "./dto/update-supplier.dto";
 import { SuppliersService } from "./suppliers.service";
@@ -55,6 +56,16 @@ export class SuppliersController {
   ): Promise<SupplierResponseDto> {
     const created = await this.suppliersService.create(actor, dto);
     return this.suppliersService.toResponse(created);
+  }
+
+  @Get(":id/analytics")
+  @Roles(UserRole.MANAGER, UserRole.ADMIN)
+  @ApiOperation({
+    summary: "Order volume, spend, and lead-time stats for a supplier (manager/admin)",
+  })
+  @ApiOkResponse({ type: SupplierAnalyticsResponseDto })
+  async analytics(@Param("id") id: string): Promise<SupplierAnalyticsResponseDto> {
+    return this.suppliersService.analytics(id);
   }
 
   @Patch(":id")

@@ -17,5 +17,6 @@ import { PushTokensService } from "./push-tokens.service";
     { provide: EMAIL_PROVIDER, useClass: ConsoleEmailProvider },
     { provide: PUSH_PROVIDER, useClass: ConsolePushProvider },
   ],
+  exports: [EMAIL_PROVIDER, PUSH_PROVIDER],
 })
 export class NotificationsModule {}

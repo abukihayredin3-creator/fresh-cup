@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
-import type { Branch } from "@prisma/client";
+import type { Branch, BranchHours } from "@prisma/client";
 import { PrismaService } from "../../database/prisma.service";
+import type { BranchHoursResponseDto, SetBranchHoursDto } from "./dto/branch-hours.dto";
 import type { BranchResponseDto } from "./dto/branch-response.dto";
 import type { CreateBranchDto } from "./dto/create-branch.dto";
 import type { UpdateBranchDto } from "./dto/update-branch.dto";
@@ -11,6 +12,11 @@ export class BranchesService {
 
   listActive(): Promise<Branch[]> {
     return this.prisma.branch.findMany({ where: { isActive: true }, orderBy: { name: "asc" } });
+  }
+
+  /** Admins/managers need every branch, including inactive ones, to reactivate or audit them. */
+  listAll(): Promise<Branch[]> {
+    return this.prisma.branch.findMany({ orderBy: { name: "asc" } });
   }
 
   async findByIdOrThrow(id: string): Promise<Branch> {
@@ -30,6 +36,29 @@ export class BranchesService {
     return this.prisma.branch.update({ where: { id }, data: dto });
   }
 
+  async getHours(branchId: string): Promise<BranchHours[]> {
+    await this.findByIdOrThrow(branchId);
+    return this.prisma.branchHours.findMany({
+      where: { branchId },
+      orderBy: { dayOfWeek: "asc" },
+    });
+  }
+
+  /** Replaces the full week in one call — the admin UI always edits all 7 days together. */
+  async setHours(branchId: string, dto: SetBranchHoursDto): Promise<BranchHours[]> {
+    await this.findByIdOrThrow(branchId);
+    await this.prisma.$transaction(
+      dto.days.map((day) =>
+        this.prisma.branchHours.upsert({
+          where: { branchId_dayOfWeek: { branchId, dayOfWeek: day.dayOfWeek } },
+          create: { branchId, ...day },
+          update: day,
+        }),
+      ),
+    );
+    return this.getHours(branchId);
+  }
+
   toResponse(branch: Branch): BranchResponseDto {
     return {
       id: branch.id,
@@ -38,7 +67,18 @@ export class BranchesService {
       lat: branch.lat ? Number(branch.lat) : null,
       lng: branch.lng ? Number(branch.lng) : null,
       phone: branch.phone,
+      managerId: branch.managerId,
       isActive: branch.isActive,
+    };
+  }
+
+  hoursToResponse(hours: BranchHours): BranchHoursResponseDto {
+    return {
+      id: hours.id,
+      dayOfWeek: hours.dayOfWeek,
+      opensAt: hours.opensAt ?? undefined,
+      closesAt: hours.closesAt ?? undefined,
+      isClosed: hours.isClosed,
     };
   }
 }

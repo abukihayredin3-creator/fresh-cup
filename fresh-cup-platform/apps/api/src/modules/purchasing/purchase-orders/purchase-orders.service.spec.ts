@@ -4,12 +4,16 @@ import {
   UserRole,
   type PurchaseOrder,
   type PurchaseOrderLine,
+  type PurchaseOrderPayment,
 } from "@prisma/client";
 import type { RequestUser } from "../../../common/types/request-user.interface";
 import type { PrismaService } from "../../../database/prisma.service";
 import { PurchaseOrdersService } from "./purchase-orders.service";
 
-type OrderWithLines = PurchaseOrder & { lines: PurchaseOrderLine[] };
+type OrderWithLines = PurchaseOrder & {
+  lines: PurchaseOrderLine[];
+  payments: PurchaseOrderPayment[];
+};
 
 function makeLine(overrides: Partial<PurchaseOrderLine>): PurchaseOrderLine {
   return {
@@ -36,6 +40,9 @@ function makeOrder(overrides: Partial<OrderWithLines>): OrderWithLines {
     createdAt: new Date(),
     updatedAt: new Date(),
     lines: [makeLine({})],
+    payments: [],
+    invoiceNumber: null,
+    invoiceUrl: null,
     ...overrides,
   } as OrderWithLines;
 }
@@ -45,6 +52,7 @@ describe("PurchaseOrdersService", () => {
   let prisma: {
     purchaseOrder: { findUnique: jest.Mock; update: jest.Mock };
     purchaseOrderLine: { update: jest.Mock };
+    purchaseOrderPayment: { create: jest.Mock };
     inventoryTransaction: { create: jest.Mock };
     inventoryItem: { update: jest.Mock };
     $transaction: jest.Mock;
@@ -56,6 +64,7 @@ describe("PurchaseOrdersService", () => {
     prisma = {
       purchaseOrder: { findUnique: jest.fn(), update: jest.fn() },
       purchaseOrderLine: { update: jest.fn() },
+      purchaseOrderPayment: { create: jest.fn() },
       inventoryTransaction: { create: jest.fn() },
       inventoryItem: { update: jest.fn() },
       $transaction: jest.fn().mockResolvedValue([]),
@@ -161,6 +170,71 @@ describe("PurchaseOrdersService", () => {
       prisma.purchaseOrder.findUnique.mockResolvedValue(order);
 
       await expect(service.cancel(manager, order.id)).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe("addPayment", () => {
+    it("records a payment and returns the refreshed order", async () => {
+      const order = makeOrder({});
+      const refreshed = makeOrder({ payments: [{ id: "pay-1", amount: 5000 }] as never });
+      prisma.purchaseOrder.findUnique.mockResolvedValueOnce(order).mockResolvedValueOnce(refreshed);
+
+      const result = await service.addPayment(manager, order.id, { amount: 5000, method: "cash" });
+
+      expect(prisma.purchaseOrderPayment.create).toHaveBeenCalledWith({
+        data: { purchaseOrderId: order.id, amount: 5000, method: "cash", note: undefined },
+      });
+      expect(result.payments).toHaveLength(1);
+    });
+  });
+
+  describe("attachInvoice", () => {
+    it("stores the invoice number and url", async () => {
+      const order = makeOrder({});
+      prisma.purchaseOrder.findUnique.mockResolvedValue(order);
+      prisma.purchaseOrder.update.mockResolvedValue({
+        ...order,
+        invoiceNumber: "INV-1",
+        invoiceUrl: "https://example.com/inv-1.pdf",
+      });
+
+      const result = await service.attachInvoice(manager, order.id, {
+        invoiceNumber: "INV-1",
+        invoiceUrl: "https://example.com/inv-1.pdf",
+      });
+
+      expect(result.invoiceNumber).toBe("INV-1");
+    });
+  });
+
+  describe("toResponse", () => {
+    it("sums payments into totalPaid", () => {
+      const order = makeOrder({
+        payments: [
+          {
+            id: "p1",
+            purchaseOrderId: "po-1",
+            amount: 3000,
+            method: "cash",
+            note: null,
+            paidAt: new Date(),
+            createdAt: new Date(),
+          },
+          {
+            id: "p2",
+            purchaseOrderId: "po-1",
+            amount: 2000,
+            method: "cash",
+            note: null,
+            paidAt: new Date(),
+            createdAt: new Date(),
+          },
+        ] as never,
+      });
+
+      const response = service.toResponse(order);
+
+      expect(response.totalPaid).toBe(5000);
     });
   });
 });

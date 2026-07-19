@@ -1,6 +1,10 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { EventEmitter2, OnEvent } from "@nestjs/event-emitter";
-import { InventoryTransactionReason, type InventoryItem } from "@prisma/client";
+import {
+  InventoryTransactionReason,
+  type InventoryItem,
+  type InventoryTransaction,
+} from "@prisma/client";
 import { assertBranchAccess } from "../../common/access/branch-access.util";
 import {
   INVENTORY_EVENTS,
@@ -12,9 +16,17 @@ import type { RequestUser } from "../../common/types/request-user.interface";
 import { PrismaService } from "../../database/prisma.service";
 import type { AdjustStockDto } from "./dto/adjust-stock.dto";
 import type { CreateInventoryItemDto } from "./dto/create-inventory-item.dto";
+import type { InventoryHistoryQueryDto } from "./dto/inventory-history-query.dto";
 import type { InventoryItemResponseDto } from "./dto/inventory-item-response.dto";
+import type { InventoryTransactionResponseDto } from "./dto/inventory-transaction-response.dto";
 import type { ListInventoryItemsQueryDto } from "./dto/list-inventory-items-query.dto";
+import type { PredictedShortageDto } from "./dto/predicted-shortage-response.dto";
 import type { UpdateInventoryItemDto } from "./dto/update-inventory-item.dto";
+import type { WasteReportQueryDto } from "./dto/waste-report-query.dto";
+import type { WasteReportItemDto, WasteReportResponseDto } from "./dto/waste-report-response.dto";
+
+/** Trailing window used to estimate daily consumption for the shortage predictor. */
+const CONSUMPTION_WINDOW_DAYS = 14;
 
 @Injectable()
 export class InventoryService {
@@ -205,5 +217,128 @@ export class InventoryService {
       isActive: item.isActive,
       isLowStock: currentStock <= reorderThreshold,
     };
+  }
+
+  /** Ledger history for a single item, most recent first. */
+  history(itemId: string, query: InventoryHistoryQueryDto) {
+    return paginate<InventoryTransaction>(
+      (page) =>
+        this.prisma.inventoryTransaction.findMany({
+          where: { inventoryItemId: itemId, reason: query.reason },
+          orderBy: { createdAt: "desc" },
+          ...page,
+        }),
+      { cursor: query.cursor, limit: query.limit },
+    );
+  }
+
+  transactionToResponse(tx: InventoryTransaction): InventoryTransactionResponseDto {
+    return {
+      id: tx.id,
+      inventoryItemId: tx.inventoryItemId,
+      delta: Number(tx.delta),
+      reason: tx.reason,
+      note: tx.note,
+      actorUserId: tx.actorUserId,
+      createdAt: tx.createdAt,
+    };
+  }
+
+  /** Aggregates WASTE-reason ledger entries per item over an optional date range. */
+  async wasteReport(query: WasteReportQueryDto): Promise<WasteReportResponseDto> {
+    const transactions = await this.prisma.inventoryTransaction.findMany({
+      where: {
+        reason: InventoryTransactionReason.WASTE,
+        createdAt: {
+          gte: query.dateFrom ? new Date(query.dateFrom) : undefined,
+          lte: query.dateTo ? new Date(query.dateTo) : undefined,
+        },
+        inventoryItem: { branchId: query.branchId },
+      },
+      include: { inventoryItem: true },
+    });
+
+    const byItem = new Map<string, WasteReportItemDto>();
+    for (const tx of transactions) {
+      const wasted = Math.abs(Number(tx.delta));
+      const existing = byItem.get(tx.inventoryItemId);
+      if (existing) {
+        existing.totalWasted += wasted;
+        existing.estimatedCost += wasted * tx.inventoryItem.unitCost;
+        existing.transactionCount += 1;
+      } else {
+        byItem.set(tx.inventoryItemId, {
+          inventoryItemId: tx.inventoryItemId,
+          name: tx.inventoryItem.name,
+          unit: tx.inventoryItem.unit,
+          totalWasted: wasted,
+          estimatedCost: wasted * tx.inventoryItem.unitCost,
+          transactionCount: 1,
+        });
+      }
+    }
+
+    const items = Array.from(byItem.values()).sort((a, b) => b.estimatedCost - a.estimatedCost);
+    return {
+      items,
+      totalEstimatedCost: items.reduce((sum, item) => sum + item.estimatedCost, 0),
+    };
+  }
+
+  /**
+   * Flags items likely to hit zero stock soon, based on average daily
+   * ORDER_DEDUCTION consumption over a trailing window. Application-code
+   * aggregate rather than raw SQL, consistent with lowStock()/analytics
+   * elsewhere in this codebase.
+   */
+  async predictedShortages(branchId?: string): Promise<PredictedShortageDto[]> {
+    const items = await this.prisma.inventoryItem.findMany({
+      where: { branchId, isActive: true },
+    });
+    if (items.length === 0) {
+      return [];
+    }
+
+    const windowStart = new Date(Date.now() - CONSUMPTION_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+    const deductions = await this.prisma.inventoryTransaction.findMany({
+      where: {
+        inventoryItemId: { in: items.map((item) => item.id) },
+        reason: InventoryTransactionReason.ORDER_DEDUCTION,
+        createdAt: { gte: windowStart },
+      },
+    });
+
+    const consumedByItem = new Map<string, number>();
+    for (const tx of deductions) {
+      const consumed = Math.abs(Number(tx.delta));
+      consumedByItem.set(
+        tx.inventoryItemId,
+        (consumedByItem.get(tx.inventoryItemId) ?? 0) + consumed,
+      );
+    }
+
+    return items
+      .map((item) => {
+        const currentStock = Number(item.currentStock);
+        const reorderThreshold = Number(item.reorderThreshold);
+        const avgDailyConsumption = (consumedByItem.get(item.id) ?? 0) / CONSUMPTION_WINDOW_DAYS;
+        const daysUntilStockout =
+          avgDailyConsumption > 0 ? currentStock / avgDailyConsumption : null;
+        return {
+          inventoryItemId: item.id,
+          name: item.name,
+          unit: item.unit,
+          currentStock,
+          reorderThreshold,
+          avgDailyConsumption,
+          daysUntilStockout,
+        };
+      })
+      .filter(
+        (prediction) =>
+          prediction.daysUntilStockout !== null ||
+          prediction.currentStock <= prediction.reorderThreshold,
+      )
+      .sort((a, b) => (a.daysUntilStockout ?? Infinity) - (b.daysUntilStockout ?? Infinity));
   }
 }

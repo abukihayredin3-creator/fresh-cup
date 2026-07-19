@@ -1,5 +1,5 @@
 import { ForbiddenException, NotFoundException } from "@nestjs/common";
-import { UserRole } from "@prisma/client";
+import { DeliveryStatus, UserRole } from "@prisma/client";
 import type { RequestUser } from "../../common/types/request-user.interface";
 import type { PrismaService } from "../../database/prisma.service";
 import { AnalyticsService } from "./analytics.service";
@@ -10,8 +10,9 @@ describe("AnalyticsService", () => {
     order: { findMany: jest.Mock; aggregate: jest.Mock; findFirst: jest.Mock; count: jest.Mock };
     orderItem: { findMany: jest.Mock };
     user: { findMany: jest.Mock; findUnique: jest.Mock };
-    delivery: { count: jest.Mock };
+    delivery: { count: jest.Mock; findMany: jest.Mock };
     inventoryItem: { findMany: jest.Mock };
+    kitchenStation: { findMany: jest.Mock };
     loyaltyLedger: { findFirst: jest.Mock };
   };
 
@@ -23,8 +24,9 @@ describe("AnalyticsService", () => {
       order: { findMany: jest.fn(), aggregate: jest.fn(), findFirst: jest.fn(), count: jest.fn() },
       orderItem: { findMany: jest.fn() },
       user: { findMany: jest.fn(), findUnique: jest.fn() },
-      delivery: { count: jest.fn() },
+      delivery: { count: jest.fn(), findMany: jest.fn() },
       inventoryItem: { findMany: jest.fn() },
+      kitchenStation: { findMany: jest.fn() },
       loyaltyLedger: { findFirst: jest.fn() },
     };
     service = new AnalyticsService(prisma as unknown as PrismaService);
@@ -99,6 +101,103 @@ describe("AnalyticsService", () => {
 
       expect(result.items).toHaveLength(2);
       expect(result.items.map((i) => i.menuItemId)).toEqual(["a", "b"]);
+    });
+  });
+
+  describe("kitchenPerformance", () => {
+    it("averages readyAt - preparingAt across completed orders", async () => {
+      prisma.order.findMany.mockResolvedValue([
+        {
+          preparingAt: new Date("2026-07-01T09:00:00Z"),
+          readyAt: new Date("2026-07-01T09:05:00Z"),
+        },
+        {
+          preparingAt: new Date("2026-07-01T10:00:00Z"),
+          readyAt: new Date("2026-07-01T10:10:00Z"),
+        },
+      ]);
+      prisma.orderItem.findMany.mockResolvedValue([
+        { stationId: "station-1", prepTimeSeconds: 120 },
+        { stationId: "station-1", prepTimeSeconds: 180 },
+      ]);
+      prisma.kitchenStation.findMany.mockResolvedValue([{ id: "station-1", name: "Juice Bar" }]);
+
+      const result = await service.kitchenPerformance(admin, {});
+
+      expect(result.completedOrders).toBe(2);
+      expect(result.avgPrepSeconds).toBe(450); // (300 + 600) / 2
+      expect(result.byStation).toEqual([
+        {
+          stationId: "station-1",
+          stationName: "Juice Bar",
+          itemCount: 2,
+          avgEstimatedPrepSeconds: 150,
+        },
+      ]);
+    });
+
+    it("returns a null average when no orders completed in range", async () => {
+      prisma.order.findMany.mockResolvedValue([]);
+      prisma.orderItem.findMany.mockResolvedValue([]);
+      prisma.kitchenStation.findMany.mockResolvedValue([]);
+
+      const result = await service.kitchenPerformance(admin, {});
+
+      expect(result.avgPrepSeconds).toBeNull();
+      expect(result.byStation).toEqual([]);
+    });
+  });
+
+  describe("deliveryPerformance", () => {
+    it("averages assignedAt -> deliveredAt for DELIVERED deliveries and buckets by zone", async () => {
+      prisma.delivery.findMany.mockResolvedValue([
+        {
+          status: DeliveryStatus.DELIVERED,
+          assignedAt: new Date("2026-07-01T09:00:00Z"),
+          deliveredAt: new Date("2026-07-01T09:30:00Z"),
+          fee: 5000,
+          zoneId: "zone-1",
+          zone: { id: "zone-1", name: "Downtown" },
+        },
+        {
+          status: DeliveryStatus.FAILED,
+          assignedAt: new Date("2026-07-01T09:00:00Z"),
+          deliveredAt: null,
+          fee: 3000,
+          zoneId: null,
+          zone: null,
+        },
+      ]);
+
+      const result = await service.deliveryPerformance(admin, {});
+
+      expect(result.totalDeliveries).toBe(2);
+      expect(result.completedDeliveries).toBe(1);
+      expect(result.avgDeliveryMinutes).toBe(30);
+      expect(result.byZone).toEqual([
+        { zoneId: "zone-1", zoneName: "Downtown", deliveredCount: 1, avgFee: 5000 },
+      ]);
+    });
+
+    it("returns a null average when there are no completed deliveries", async () => {
+      prisma.delivery.findMany.mockResolvedValue([]);
+
+      const result = await service.deliveryPerformance(admin, {});
+
+      expect(result.avgDeliveryMinutes).toBeNull();
+      expect(result.byZone).toEqual([]);
+    });
+  });
+
+  describe("deliveryHeatmap", () => {
+    it("maps delivered orders' coordinates to heatmap points", async () => {
+      prisma.order.findMany.mockResolvedValue([
+        { deliveryLat: "9.010000", deliveryLng: "38.760000" },
+      ]);
+
+      const result = await service.deliveryHeatmap(admin, {});
+
+      expect(result.points).toEqual([{ lat: 9.01, lng: 38.76 }]);
     });
   });
 

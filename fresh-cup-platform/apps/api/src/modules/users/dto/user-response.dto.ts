@@ -29,3 +29,22 @@ export class UserResponseDto {
   @ApiProperty()
   createdAt!: Date;
 }
+
+/**
+ * Admin-only view of a user — adds fields that must never appear in a
+ * customer's own `/users/me` response (salary, owner flag, 2FA state).
+ * Returned only from `admin/users*` endpoints.
+ */
+export class AdminUserResponseDto extends UserResponseDto {
+  @ApiProperty()
+  isOwner!: boolean;
+
+  @ApiProperty({ nullable: true })
+  departmentId!: string | null;
+
+  @ApiProperty({ nullable: true, description: "Employee salary placeholder — admin only" })
+  salary!: number | null;
+
+  @ApiProperty()
+  twoFactorEnabled!: boolean;
+}

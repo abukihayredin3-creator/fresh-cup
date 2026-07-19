@@ -9,7 +9,7 @@ import { AdminUpdateUserDto } from "./dto/admin-update-user.dto";
 import { CreateStaffUserDto } from "./dto/create-staff-user.dto";
 import { ListUsersQueryDto } from "./dto/list-users-query.dto";
 import { UpdateProfileDto } from "./dto/update-profile.dto";
-import { UserResponseDto } from "./dto/user-response.dto";
+import { AdminUserResponseDto, UserResponseDto } from "./dto/user-response.dto";
 import { UsersService } from "./users.service";
 
 @ApiTags("users")
@@ -43,39 +43,39 @@ export class UsersController {
   @ApiOperation({ summary: "List users (admin/manager — managers see only their branch)" })
   async listUsers(@CurrentUser() actor: RequestUser, @Query() query: ListUsersQueryDto) {
     const page = await this.usersService.listUsers(actor, query);
-    return { ...page, items: page.items.map((u) => this.usersService.toResponse(u)) };
+    return { ...page, items: page.items.map((u) => this.usersService.toAdminResponse(u)) };
   }
 
   @Get("admin/users/:id")
   @Roles(UserRole.ADMIN, UserRole.MANAGER)
   @ApiOperation({ summary: "Get a user by id (admin/manager)" })
-  @ApiOkResponse({ type: UserResponseDto })
-  async getUser(@Param("id") id: string): Promise<UserResponseDto> {
+  @ApiOkResponse({ type: AdminUserResponseDto })
+  async getUser(@Param("id") id: string): Promise<AdminUserResponseDto> {
     const record = await this.usersService.findByIdOrThrow(id);
-    return this.usersService.toResponse(record);
+    return this.usersService.toAdminResponse(record);
   }
 
   @Post("admin/users")
   @Roles(UserRole.ADMIN)
   @ApiOperation({ summary: "Create a staff/manager/admin user (admin only)" })
-  @ApiOkResponse({ type: UserResponseDto })
-  async createStaffUser(@Body() dto: CreateStaffUserDto): Promise<UserResponseDto> {
+  @ApiOkResponse({ type: AdminUserResponseDto })
+  async createStaffUser(@Body() dto: CreateStaffUserDto): Promise<AdminUserResponseDto> {
     const existing = await this.usersService.findByEmail(dto.email);
     UsersService.assertUniqueEmailAvailable(existing, dto.email);
     const created = await this.usersService.createStaffUser(dto);
-    return this.usersService.toResponse(created);
+    return this.usersService.toAdminResponse(created);
   }
 
   @Patch("admin/users/:id")
   @Roles(UserRole.ADMIN, UserRole.MANAGER)
   @ApiOperation({ summary: "Update a user (admin/manager — managers scoped to their branch)" })
-  @ApiOkResponse({ type: UserResponseDto })
+  @ApiOkResponse({ type: AdminUserResponseDto })
   async updateUser(
     @CurrentUser() actor: RequestUser,
     @Param("id") id: string,
     @Body() dto: AdminUpdateUserDto,
-  ): Promise<UserResponseDto> {
+  ): Promise<AdminUserResponseDto> {
     const updated = await this.usersService.adminUpdateUser(actor, id, dto);
-    return this.usersService.toResponse(updated);
+    return this.usersService.toAdminResponse(updated);
   }
 }

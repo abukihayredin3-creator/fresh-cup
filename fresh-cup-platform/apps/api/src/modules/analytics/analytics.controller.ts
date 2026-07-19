@@ -9,7 +9,10 @@ import { CustomerAnalyticsResponseDto } from "./dto/customer-analytics-response.
 import { CustomerDetailResponseDto } from "./dto/customer-detail-response.dto";
 import { DashboardResponseDto } from "./dto/dashboard-response.dto";
 import { DateRangeQueryDto } from "./dto/date-range-query.dto";
+import { DeliveryAnalyticsResponseDto } from "./dto/delivery-analytics-response.dto";
+import { DeliveryHeatmapResponseDto } from "./dto/delivery-heatmap-response.dto";
 import { ItemAnalyticsResponseDto } from "./dto/item-analytics-response.dto";
+import { KitchenAnalyticsResponseDto } from "./dto/kitchen-analytics-response.dto";
 import { SalesAnalyticsResponseDto } from "./dto/sales-analytics-response.dto";
 import { TopListQueryDto } from "./dto/top-list-query.dto";
 
@@ -58,6 +61,38 @@ export class AnalyticsController {
     @Query() query: TopListQueryDto,
   ): Promise<CustomerAnalyticsResponseDto> {
     return this.analyticsService.customers(actor, query);
+  }
+
+  @Get("analytics/kitchen")
+  @ApiOperation({
+    summary: "Kitchen prep-time performance by station over a date range (manager/admin)",
+  })
+  @ApiOkResponse({ type: KitchenAnalyticsResponseDto })
+  async kitchen(
+    @CurrentUser() actor: RequestUser,
+    @Query() query: DateRangeQueryDto,
+  ): Promise<KitchenAnalyticsResponseDto> {
+    return this.analyticsService.kitchenPerformance(actor, query);
+  }
+
+  @Get("analytics/delivery")
+  @ApiOperation({ summary: "Delivery time and zone performance over a date range (manager/admin)" })
+  @ApiOkResponse({ type: DeliveryAnalyticsResponseDto })
+  async delivery(
+    @CurrentUser() actor: RequestUser,
+    @Query() query: DateRangeQueryDto,
+  ): Promise<DeliveryAnalyticsResponseDto> {
+    return this.analyticsService.deliveryPerformance(actor, query);
+  }
+
+  @Get("analytics/delivery/heatmap")
+  @ApiOperation({ summary: "Delivered-order coordinates for a heat-map view (manager/admin)" })
+  @ApiOkResponse({ type: DeliveryHeatmapResponseDto })
+  async deliveryHeatmap(
+    @CurrentUser() actor: RequestUser,
+    @Query() query: DateRangeQueryDto,
+  ): Promise<DeliveryHeatmapResponseDto> {
+    return this.analyticsService.deliveryHeatmap(actor, query);
   }
 
   @Get("customers/:id")

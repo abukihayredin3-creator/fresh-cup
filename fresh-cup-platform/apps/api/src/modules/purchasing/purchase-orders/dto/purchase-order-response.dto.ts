@@ -1,6 +1,7 @@
 import { ApiProperty } from "@nestjs/swagger";
 import { PurchaseOrderStatus } from "@prisma/client";
 import { PurchaseOrderLineResponseDto } from "./purchase-order-line-response.dto";
+import { PurchaseOrderPaymentResponseDto } from "./purchase-order-payment-response.dto";
 
 export class PurchaseOrderResponseDto {
   @ApiProperty()
@@ -27,6 +28,12 @@ export class PurchaseOrderResponseDto {
   @ApiProperty({ nullable: true })
   receivedAt!: Date | null;
 
+  @ApiProperty({ nullable: true })
+  invoiceNumber!: string | null;
+
+  @ApiProperty({ nullable: true })
+  invoiceUrl!: string | null;
+
   @ApiProperty()
   createdAt!: Date;
 
@@ -35,4 +42,10 @@ export class PurchaseOrderResponseDto {
 
   @ApiProperty({ type: [PurchaseOrderLineResponseDto] })
   lines!: PurchaseOrderLineResponseDto[];
+
+  @ApiProperty({ type: [PurchaseOrderPaymentResponseDto] })
+  payments!: PurchaseOrderPaymentResponseDto[];
+
+  @ApiProperty({ description: "Sum of payments, in ETB minor units" })
+  totalPaid!: number;
 }

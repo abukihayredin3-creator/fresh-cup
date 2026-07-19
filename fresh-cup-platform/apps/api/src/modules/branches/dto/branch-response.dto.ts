@@ -19,6 +19,9 @@ export class BranchResponseDto {
   @ApiProperty({ nullable: true })
   phone!: string | null;
 
+  @ApiProperty({ nullable: true })
+  managerId!: string | null;
+
   @ApiProperty()
   isActive!: boolean;
 }

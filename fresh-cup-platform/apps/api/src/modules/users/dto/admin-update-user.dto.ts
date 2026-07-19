@@ -1,6 +1,15 @@
 import { ApiPropertyOptional } from "@nestjs/swagger";
 import { UserRole } from "@prisma/client";
-import { IsBoolean, IsEnum, IsOptional, IsString, IsUUID, MinLength } from "class-validator";
+import {
+  IsBoolean,
+  IsEnum,
+  IsNumber,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Min,
+  MinLength,
+} from "class-validator";
 
 export class AdminUpdateUserDto {
   @ApiPropertyOptional()
@@ -23,4 +32,20 @@ export class AdminUpdateUserDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @ApiPropertyOptional({ description: "Admin only — grants Owner-level access on top of ADMIN" })
+  @IsOptional()
+  @IsBoolean()
+  isOwner?: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
+  departmentId?: string;
+
+  @ApiPropertyOptional({ description: "Admin only — employee salary placeholder" })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  salary?: number;
 }

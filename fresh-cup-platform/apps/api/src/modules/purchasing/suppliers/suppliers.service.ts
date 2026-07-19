@@ -1,11 +1,12 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
-import type { Supplier } from "@prisma/client";
+import { PurchaseOrderStatus, type Supplier } from "@prisma/client";
 import { assertBranchAccess } from "../../../common/access/branch-access.util";
 import { paginate } from "../../../common/pagination/paginate";
 import type { RequestUser } from "../../../common/types/request-user.interface";
 import { PrismaService } from "../../../database/prisma.service";
 import type { CreateSupplierDto } from "./dto/create-supplier.dto";
 import type { ListSuppliersQueryDto } from "./dto/list-suppliers-query.dto";
+import type { SupplierAnalyticsResponseDto } from "./dto/supplier-analytics-response.dto";
 import type { SupplierResponseDto } from "./dto/supplier-response.dto";
 import type { UpdateSupplierDto } from "./dto/update-supplier.dto";
 
@@ -48,6 +49,50 @@ export class SuppliersService {
     const supplier = await this.findByIdOrThrow(id);
     assertBranchAccess(actor, supplier.branchId);
     await this.prisma.supplier.update({ where: { id }, data: { isActive: false } });
+  }
+
+  /** Order-volume, spend, and lead-time stats for one supplier, computed on demand. */
+  async analytics(id: string): Promise<SupplierAnalyticsResponseDto> {
+    await this.findByIdOrThrow(id);
+
+    const orders = await this.prisma.purchaseOrder.findMany({
+      where: { supplierId: id },
+      include: { lines: true, payments: true },
+    });
+
+    const receivedOrders = orders.filter((o) => o.status === PurchaseOrderStatus.RECEIVED);
+    const cancelledOrders = orders.filter((o) => o.status === PurchaseOrderStatus.CANCELLED);
+
+    const totalSpend = receivedOrders.reduce(
+      (sum, order) =>
+        sum +
+        order.lines.reduce(
+          (lineSum, line) => lineSum + Number(line.quantityOrdered) * line.unitCost,
+          0,
+        ),
+      0,
+    );
+    const totalPaid = orders.reduce(
+      (sum, order) => sum + order.payments.reduce((pSum, p) => pSum + p.amount, 0),
+      0,
+    );
+
+    const leadTimes = receivedOrders
+      .filter((o) => o.submittedAt && o.receivedAt)
+      .map((o) => (o.receivedAt!.getTime() - o.submittedAt!.getTime()) / (24 * 60 * 60 * 1000));
+    const avgLeadTimeDays =
+      leadTimes.length > 0 ? leadTimes.reduce((sum, d) => sum + d, 0) / leadTimes.length : null;
+
+    return {
+      supplierId: id,
+      totalOrders: orders.length,
+      receivedOrders: receivedOrders.length,
+      cancelledOrders: cancelledOrders.length,
+      totalSpend,
+      totalPaid,
+      avgLeadTimeDays,
+      fulfillmentRate: orders.length > 0 ? receivedOrders.length / orders.length : 0,
+    };
   }
 
   toResponse(supplier: Supplier): SupplierResponseDto {

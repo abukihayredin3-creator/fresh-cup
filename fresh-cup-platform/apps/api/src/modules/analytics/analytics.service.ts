@@ -6,7 +6,10 @@ import type { CustomerAnalyticsResponseDto } from "./dto/customer-analytics-resp
 import type { CustomerDetailResponseDto } from "./dto/customer-detail-response.dto";
 import type { DashboardResponseDto } from "./dto/dashboard-response.dto";
 import type { DateRangeQueryDto } from "./dto/date-range-query.dto";
+import type { DeliveryAnalyticsResponseDto } from "./dto/delivery-analytics-response.dto";
+import type { DeliveryHeatmapResponseDto } from "./dto/delivery-heatmap-response.dto";
 import type { ItemAnalyticsResponseDto } from "./dto/item-analytics-response.dto";
+import type { KitchenAnalyticsResponseDto } from "./dto/kitchen-analytics-response.dto";
 import type { SalesAnalyticsResponseDto } from "./dto/sales-analytics-response.dto";
 import type { TopListQueryDto } from "./dto/top-list-query.dto";
 
@@ -262,6 +265,150 @@ export class AnalyticsService {
       totalSpend: aggregate._sum.total ?? 0,
       loyaltyBalance: loyalty?.balanceAfter ?? 0,
       lastOrderAt: lastOrder?.placedAt ?? null,
+    };
+  }
+
+  async kitchenPerformance(
+    actor: RequestUser,
+    query: DateRangeQueryDto,
+  ): Promise<KitchenAnalyticsResponseDto> {
+    const scopedBranchId = this.resolveBranchScope(actor, query.branchId);
+    const { start, end } = this.resolveRange(query.from, query.to);
+    const branchWhere = scopedBranchId ? { branchId: scopedBranchId } : {};
+
+    const orders = await this.prisma.order.findMany({
+      where: {
+        ...branchWhere,
+        placedAt: { gte: start, lte: end },
+        preparingAt: { not: null },
+        readyAt: { not: null },
+      },
+      select: { preparingAt: true, readyAt: true },
+    });
+    const prepDurations = orders.map(
+      (o) => (o.readyAt!.getTime() - o.preparingAt!.getTime()) / 1000,
+    );
+    const avgPrepSeconds =
+      prepDurations.length > 0
+        ? prepDurations.reduce((sum, d) => sum + d, 0) / prepDurations.length
+        : null;
+
+    const items = await this.prisma.orderItem.findMany({
+      where: {
+        order: { ...branchWhere, placedAt: { gte: start, lte: end } },
+        stationId: { not: null },
+      },
+      select: { stationId: true, prepTimeSeconds: true },
+    });
+    const stationIds = Array.from(new Set(items.map((i) => i.stationId!)));
+    const stations = await this.prisma.kitchenStation.findMany({
+      where: { id: { in: stationIds } },
+      select: { id: true, name: true },
+    });
+    const stationNameById = new Map(stations.map((s) => [s.id, s.name]));
+
+    const byStationMap = new Map<string, { itemCount: number; prepSecondsSum: number }>();
+    for (const item of items) {
+      const bucket = byStationMap.get(item.stationId!) ?? { itemCount: 0, prepSecondsSum: 0 };
+      bucket.itemCount += 1;
+      bucket.prepSecondsSum += item.prepTimeSeconds;
+      byStationMap.set(item.stationId!, bucket);
+    }
+
+    const byStation = Array.from(byStationMap.entries())
+      .map(([stationId, bucket]) => ({
+        stationId,
+        stationName: stationNameById.get(stationId) ?? "Unknown",
+        itemCount: bucket.itemCount,
+        avgEstimatedPrepSeconds: bucket.prepSecondsSum / bucket.itemCount,
+      }))
+      .sort((a, b) => b.itemCount - a.itemCount);
+
+    return {
+      from: toDateKey(start),
+      to: toDateKey(end),
+      completedOrders: orders.length,
+      avgPrepSeconds,
+      byStation,
+    };
+  }
+
+  async deliveryPerformance(
+    actor: RequestUser,
+    query: DateRangeQueryDto,
+  ): Promise<DeliveryAnalyticsResponseDto> {
+    const scopedBranchId = this.resolveBranchScope(actor, query.branchId);
+    const { start, end } = this.resolveRange(query.from, query.to);
+
+    const deliveries = await this.prisma.delivery.findMany({
+      where: {
+        ...(scopedBranchId ? { branchId: scopedBranchId } : {}),
+        createdAt: { gte: start, lte: end },
+      },
+      include: { zone: { select: { id: true, name: true } } },
+    });
+
+    const completed = deliveries.filter(
+      (d) => d.status === DeliveryStatus.DELIVERED && d.assignedAt && d.deliveredAt,
+    );
+    const durations = completed.map(
+      (d) => (d.deliveredAt!.getTime() - d.assignedAt!.getTime()) / (60 * 1000),
+    );
+    const avgDeliveryMinutes =
+      durations.length > 0 ? durations.reduce((sum, m) => sum + m, 0) / durations.length : null;
+
+    const byZoneMap = new Map<string, { zoneName: string; feeSum: number; count: number }>();
+    for (const delivery of deliveries.filter((d) => d.status === DeliveryStatus.DELIVERED)) {
+      const key = delivery.zoneId ?? "__unzoned__";
+      const bucket = byZoneMap.get(key) ?? {
+        zoneName: delivery.zone?.name ?? "Unzoned",
+        feeSum: 0,
+        count: 0,
+      };
+      bucket.feeSum += delivery.fee;
+      bucket.count += 1;
+      byZoneMap.set(key, bucket);
+    }
+
+    const byZone = Array.from(byZoneMap.entries())
+      .map(([key, bucket]) => ({
+        zoneId: key === "__unzoned__" ? null : key,
+        zoneName: bucket.zoneName,
+        deliveredCount: bucket.count,
+        avgFee: Math.round(bucket.feeSum / bucket.count),
+      }))
+      .sort((a, b) => b.deliveredCount - a.deliveredCount);
+
+    return {
+      from: toDateKey(start),
+      to: toDateKey(end),
+      totalDeliveries: deliveries.length,
+      completedDeliveries: completed.length,
+      avgDeliveryMinutes,
+      byZone,
+    };
+  }
+
+  /** Delivered-order drop-off coordinates for a heat-map view — no clustering, left to the frontend. */
+  async deliveryHeatmap(
+    actor: RequestUser,
+    query: DateRangeQueryDto,
+  ): Promise<DeliveryHeatmapResponseDto> {
+    const scopedBranchId = this.resolveBranchScope(actor, query.branchId);
+    const { start, end } = this.resolveRange(query.from, query.to);
+
+    const orders = await this.prisma.order.findMany({
+      where: {
+        ...(scopedBranchId ? { branchId: scopedBranchId } : {}),
+        placedAt: { gte: start, lte: end },
+        deliveryLat: { not: null },
+        deliveryLng: { not: null },
+      },
+      select: { deliveryLat: true, deliveryLng: true },
+    });
+
+    return {
+      points: orders.map((o) => ({ lat: Number(o.deliveryLat), lng: Number(o.deliveryLng) })),
     };
   }
 }
