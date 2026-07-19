@@ -20,7 +20,7 @@ import { toQueryString, type PaginationParams } from "../../query";
 export class AdminEmployeesResource {
   constructor(private readonly client: ApiClient) {}
 
-  listDepartments(): Promise<PaginatedResult<Department>> {
+  listDepartments(): Promise<Department[]> {
     return this.client.request("/admin/departments");
   }
 
