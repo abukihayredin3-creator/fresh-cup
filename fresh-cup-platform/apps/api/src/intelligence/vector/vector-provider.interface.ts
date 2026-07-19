@@ -21,6 +21,17 @@ export interface VectorProvider {
   readonly name: string;
   readonly isConfigured: boolean;
   upsert(namespace: string, records: VectorRecord[]): Promise<void>;
-  query(namespace: string, embedding: number[], topK: number): Promise<VectorQueryResult[]>;
+  /**
+   * `filter` is an exact-match AND filter over each record's `metadata` —
+   * "Metadata Filtering" from the Phase 11 Part 3 spec. Every provider
+   * implements it against its own native filter syntax; `PgVectorProvider`
+   * (the default) is the one exercised by this app's test suite and CI.
+   */
+  query(
+    namespace: string,
+    embedding: number[],
+    topK: number,
+    filter?: Record<string, unknown>,
+  ): Promise<VectorQueryResult[]>;
   delete(namespace: string, ids: string[]): Promise<void>;
 }

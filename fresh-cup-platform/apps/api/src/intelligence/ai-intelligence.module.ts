@@ -52,6 +52,7 @@ import { AiAuthorizationGuard } from "./guards/ai-authorization.guard";
 import { SecretRedactionInterceptor } from "./interceptors/secret-redaction.interceptor";
 import { LLM_PROVIDER_TOKEN, createLlmProvider } from "./llm/llm-provider.factory";
 import { AiMemoryService } from "./memory/ai-memory.service";
+import { ConversationMemoryService } from "./memory/conversation-memory.service";
 import { CustomerPredictionService } from "./prediction/customer-prediction.service";
 import { RagService } from "./rag/rag.service";
 import { LearningDigestScheduler } from "./scheduler/learning-digest.scheduler";
@@ -153,6 +154,7 @@ import { EmbeddingBackfillWorker } from "./workers/embedding-backfill.worker";
     },
     RagService,
     AiMemoryService,
+    ConversationMemoryService,
     AiSecurityService,
     AgentRunnerService,
     ExplanationService,

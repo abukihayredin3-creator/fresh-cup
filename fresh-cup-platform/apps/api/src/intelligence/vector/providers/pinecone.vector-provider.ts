@@ -47,12 +47,23 @@ export class PineconeVectorProvider implements VectorProvider {
     }
   }
 
-  async query(namespace: string, embedding: number[], topK: number): Promise<VectorQueryResult[]> {
+  async query(
+    namespace: string,
+    embedding: number[],
+    topK: number,
+    filter?: Record<string, unknown>,
+  ): Promise<VectorQueryResult[]> {
     this.assertConfigured();
     const response = await fetch(`https://${this.indexHost}/query`, {
       method: "POST",
       headers: this.headers(),
-      body: JSON.stringify({ namespace, vector: embedding, topK, includeMetadata: true }),
+      body: JSON.stringify({
+        namespace,
+        vector: embedding,
+        topK,
+        includeMetadata: true,
+        ...(filter && Object.keys(filter).length > 0 ? { filter } : {}),
+      }),
     });
     if (!response.ok) {
       throw new Error(`Pinecone query failed: ${response.status} ${await response.text()}`);

@@ -35,8 +35,18 @@ export class PgVectorProvider implements VectorProvider {
     }
   }
 
-  async query(namespace: string, embedding: number[], topK: number): Promise<VectorQueryResult[]> {
-    const candidates = await this.prisma.vectorEntry.findMany({ where: { namespace } });
+  async query(
+    namespace: string,
+    embedding: number[],
+    topK: number,
+    filter?: Record<string, unknown>,
+  ): Promise<VectorQueryResult[]> {
+    const metadataConditions = Object.entries(filter ?? {}).map(([key, value]) => ({
+      metadata: { path: [key], equals: value } as never,
+    }));
+    const candidates = await this.prisma.vectorEntry.findMany({
+      where: { namespace, AND: metadataConditions.length > 0 ? metadataConditions : undefined },
+    });
     return candidates
       .map((c) => ({
         id: c.id,

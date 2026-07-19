@@ -22,6 +22,8 @@ export interface RecallFilter {
   domain?: string;
   kind?: AiMemoryKind;
   branchId?: string | null;
+  authorUserId?: string;
+  subjectUserId?: string;
   limit?: number;
 }
 
@@ -90,6 +92,8 @@ export class AiMemoryService {
         domain: filter.domain,
         kind: filter.kind,
         branchId: filter.branchId === undefined ? undefined : filter.branchId,
+        authorUserId: filter.authorUserId,
+        subjectUserId: filter.subjectUserId,
       },
       orderBy: { createdAt: "desc" },
       take: filter.limit ?? 20,

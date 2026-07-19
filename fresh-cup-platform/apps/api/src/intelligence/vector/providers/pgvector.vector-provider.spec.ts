@@ -7,16 +7,14 @@ describe("PgVectorProvider", () => {
     return {
       vectorEntry: {
         upsert: jest.fn(),
-        findMany: jest
-          .fn()
-          .mockResolvedValue(
-            rows.map((r) => ({
-              ...r,
-              namespace: "ai-memory",
-              content: r.content ?? null,
-              metadata: r.metadata ?? null,
-            })),
-          ),
+        findMany: jest.fn().mockResolvedValue(
+          rows.map((r) => ({
+            ...r,
+            namespace: "ai-memory",
+            content: r.content ?? null,
+            metadata: r.metadata ?? null,
+          })),
+        ),
         deleteMany: jest.fn(),
       },
     } as never;
@@ -58,6 +56,24 @@ describe("PgVectorProvider", () => {
     const provider = new PgVectorProvider(prisma);
     const results = await provider.query("ai-memory", [1, 0], 2);
     expect(results).toHaveLength(2);
+  });
+
+  it("passes a metadata filter as an AND of JSON-path equals conditions", async () => {
+    const prisma = fakePrisma([{ id: "a", embedding: [1, 0, 0] }]);
+    const provider = new PgVectorProvider(prisma);
+    await provider.query("ai-memory", [1, 0, 0], 5, { domain: "executive", kind: "EXPLANATION" });
+
+    expect(
+      (prisma as never as { vectorEntry: { findMany: jest.Mock } }).vectorEntry.findMany,
+    ).toHaveBeenCalledWith({
+      where: {
+        namespace: "ai-memory",
+        AND: [
+          { metadata: { path: ["domain"], equals: "executive" } },
+          { metadata: { path: ["kind"], equals: "EXPLANATION" } },
+        ],
+      },
+    });
   });
 
   it("deletes by namespace + id", async () => {

@@ -57,14 +57,23 @@ export class OpenSearchVectorProvider implements VectorProvider {
     }
   }
 
-  async query(namespace: string, embedding: number[], topK: number): Promise<VectorQueryResult[]> {
+  async query(
+    namespace: string,
+    embedding: number[],
+    topK: number,
+    filter?: Record<string, unknown>,
+  ): Promise<VectorQueryResult[]> {
     this.assertConfigured();
+    const filterClauses = Object.entries(filter ?? {}).map(([key, value]) => ({
+      term: { [`metadata.${key}`]: value },
+    }));
     const response = await fetch(`${this.baseUrl}/${namespace}/_search`, {
       method: "POST",
       headers: this.headers(),
       body: JSON.stringify({
         size: topK,
         query: { knn: { embedding: { vector: embedding, k: topK } } },
+        ...(filterClauses.length > 0 ? { post_filter: { bool: { filter: filterClauses } } } : {}),
       }),
     });
     if (!response.ok) {

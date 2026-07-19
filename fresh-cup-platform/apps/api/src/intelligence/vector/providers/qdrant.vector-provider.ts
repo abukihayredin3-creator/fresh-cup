@@ -47,12 +47,26 @@ export class QdrantVectorProvider implements VectorProvider {
     }
   }
 
-  async query(namespace: string, embedding: number[], topK: number): Promise<VectorQueryResult[]> {
+  async query(
+    namespace: string,
+    embedding: number[],
+    topK: number,
+    filter?: Record<string, unknown>,
+  ): Promise<VectorQueryResult[]> {
     this.assertConfigured();
+    const must = Object.entries(filter ?? {}).map(([key, value]) => ({
+      key: `payload.${key}`,
+      match: { value },
+    }));
     const response = await fetch(`${this.baseUrl}/collections/${namespace}/points/search`, {
       method: "POST",
       headers: this.headers(),
-      body: JSON.stringify({ vector: embedding, limit: topK, with_payload: true }),
+      body: JSON.stringify({
+        vector: embedding,
+        limit: topK,
+        with_payload: true,
+        ...(must.length > 0 ? { filter: { must } } : {}),
+      }),
     });
     if (!response.ok) {
       throw new Error(`Qdrant query failed: ${response.status} ${await response.text()}`);
