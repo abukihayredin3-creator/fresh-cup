@@ -144,6 +144,7 @@ module (e.g., Notifications) becomes a bottleneck.
 - **Purchasing** — suppliers, purchase-order workflow (draft/submit/receive)
 - **Notifications** — SMS, push, email dispatch (consumes events from other modules)
 - **Analytics** — on-demand admin dashboard/sales/item/customer reporting; a scheduled-aggregation layer is future work once order volume outgrows live queries (see `ROADMAP.md` Phase 7)
+- **Intelligence** (Phase 6) — recommendations, customer/inventory/marketing intelligence, sales forecasting, executive BI, and an AI assistant, all hand-rolled statistics over the tables above — see §6a
 - **Audit** — a cross-cutting interceptor logging every admin mutation (actor, action, entity, after-state), not a bounded context of its own
 - **Branches** — restaurant locations (one today, extensible)
 
@@ -157,6 +158,40 @@ driving an Order's status as a driver updates), it injects that module's
 service directly, the same way any two NestJS providers collaborate — the
 event bus is reserved for reactive side effects (notifications, loyalty
 accrual, inventory deduction, low-stock alerts), not primary writes.
+
+### 6a. AI & Business Intelligence (Phase 6)
+
+No Python ML service, no training pipeline, no vector database anywhere
+in this stack. Every "model" in `modules/intelligence` is a few dozen
+lines of TypeScript in `ml/stats.util.ts` (linear regression, a trailing-
+average blend, quantile scoring for RFM, a hour/day-of-week seasonal
+index) running against Prisma queries — the same "no heavy dependency for
+a simple need" judgment call this codebase already made for the Phase 5
+TOTP implementation and the CSV export helper. This is a deliberate scope
+decision, not an oversight: at this system's order volume, hand-rolled
+statistics over live SQL queries are both simpler to operate and more
+than accurate enough, and reaching for a real ML framework or a separate
+service would mean standing up infrastructure (training jobs, model
+storage, a serving layer) this system has no evidence it needs yet.
+
+Recommendations, customer intelligence, inventory intelligence, and
+marketing intelligence follow the Analytics module's on-demand-aggregate
+pattern exactly — nothing is precomputed or cached. Sales forecasting is
+the one exception: it persists `ForecastSnapshot` rows (tied to a
+versioned `MlModelRun`) because "forecast vs. actual" requires yesterday's
+prediction to still exist today, and a `@nestjs/schedule` nightly job
+regenerates them — the only scheduled/cron infrastructure anywhere in the
+API.
+
+The AI assistant reuses the dependency-inverted provider pattern from
+`ChapaPaymentProvider`/`ConsoleSmsProvider`: with `ANTHROPIC_API_KEY`
+configured, the Claude API (`@anthropic-ai/sdk`) drives a manual tool-use
+loop against the intelligence services above and phrases the answer from
+their real output; without a key (the default in dev/CI), a deterministic
+keyword router calls the same tools directly. Either path is equally
+"real" — the LLM, when present, only phrases pre-fetched facts, it never
+originates one, and every query is logged to `AiAssistantQuery` with the
+tool calls that backed the answer.
 
 ## 7. API architecture
 

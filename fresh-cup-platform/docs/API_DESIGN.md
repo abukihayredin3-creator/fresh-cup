@@ -272,7 +272,7 @@ redemption limits.
 ## Loyalty
 
 Implemented in Phase 2 as accrual only — tiers, a rewards catalog, and a
-redemption flow are Phase 6.
+redemption flow are Phase 10.
 
 | Method | Path          | Notes                                                                                                                                   |
 | ------ | ------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
@@ -448,6 +448,77 @@ Singleton: there's exactly one settings row, no `{id}` in the path.
 | ------ | ----------------- | -------------------------------------------------- |
 | GET    | `/admin/settings` | `manager`/`admin`                                  |
 | PATCH  | `/admin/settings` | `admin` only; partial update, any subset of fields |
+
+## Recommendations (Phase 6)
+
+Public — recommendations work for anonymous browsing, not just logged-in
+customers (`personalized` is the one exception, since it's meaningless
+without a customer to personalize for). All computed on demand from
+Order/OrderItem history and catalog metadata, no persisted model.
+`personalized` tries user-based collaborative filtering first (what did
+customers who bought the same things also buy), falling back to
+category-affinity and then plain `trending` when there isn't enough
+co-purchase signal — this is what makes it work for a first-time customer,
+not just loyalty members with deep order history.
+
+| Method | Path                                               | Notes                                                          |
+| ------ | -------------------------------------------------- | -------------------------------------------------------------- |
+| GET    | `/recommendations/frequently-bought-together/{id}` | co-occurrence within the same order                            |
+| GET    | `/recommendations/similar/{id}`                    | same category / overlapping tags                               |
+| GET    | `/recommendations/upsell-cross-sell/{id}`          | pricier same-category items + cross-sell from other categories |
+| GET    | `/recommendations/cart`                            | `?menuItemIds=a,b,c`; cross-sell anchored on the whole cart    |
+| GET    | `/recommendations/trending`                        | trailing 7-day sales velocity, optional `branchId`             |
+| GET    | `/recommendations/seasonal`                        | `isSeasonal`/`isFeatured` items                                |
+| GET    | `/recommendations/personalized`                    | authenticated; collaborative filtering + fallback              |
+
+## AI & Business Intelligence (Phase 6)
+
+`manager`/`admin` only (Inventory Intelligence also allows
+`INVENTORY_STAFF`, Marketing Intelligence also allows `MARKETING_STAFF`).
+Customer/inventory/marketing intelligence are on-demand aggregate queries,
+same approach as the Phase 3 admin dashboard. Sales forecasting is the one
+persisted exception — see `docs/DATABASE_SCHEMA.md` for `MlModelRun`/
+`ForecastSnapshot` — because "forecast vs. actual" requires a prediction to
+outlive the day it was made, and "replaceable/versioned models" requires a
+registry row to version against. There is no Python ML service or training
+pipeline anywhere in this stack: every model is a hand-rolled statistical
+method (moving-average/linear-regression blend, RFM quantile scoring,
+co-occurrence-matrix collaborative filtering) living directly in
+`apps/api/src/modules/intelligence`.
+
+| Method | Path                                                  | Notes                                                                                                                                                                                                       |
+| ------ | ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/admin/customer-intelligence/segments`               | RFM-scored customer list with churn risk + predicted LTV; optional `branchId`/`segment`/`limit`                                                                                                             |
+| GET    | `/admin/customer-intelligence/segment-summary`        | customer counts + spend per RFM segment                                                                                                                                                                     |
+| GET    | `/admin/customer-intelligence/customers/{id}`         | full profile: RFM, LTV, churn, favorite categories, preferred order time/payment, coupon effectiveness, loyalty tier                                                                                        |
+| GET    | `/admin/forecasting/sales`                            | `?metric=SALES_REVENUE\|SALES_ORDERS&granularity=DAILY\|WEEKLY\|MONTHLY&branchId=`                                                                                                                          |
+| GET    | `/admin/forecasting/hourly-demand`                    | predicted order volume per hour-of-day for tomorrow                                                                                                                                                         |
+| GET    | `/admin/forecasting/product-demand`                   | 7-day demand forecast for the top-selling menu items                                                                                                                                                        |
+| GET    | `/admin/forecasting/model-runs`                       | model registry — every forecast-generation run, versioned                                                                                                                                                   |
+| POST   | `/admin/forecasting/regenerate`                       | `admin` only; force-regenerate every forecast now instead of waiting for the nightly job                                                                                                                    |
+| GET    | `/admin/inventory-intelligence`                       | waste probability, expiry risk, suggested reorder quantity on top of the Phase 3 shortage predictor                                                                                                         |
+| GET    | `/admin/marketing-intelligence/campaign-performance`  | estimated order-volume lift around each campaign's send time                                                                                                                                                |
+| GET    | `/admin/marketing-intelligence/coupon-optimization`   | per-coupon redemption rate + AOV impact vs. baseline, with a usage recommendation                                                                                                                           |
+| GET    | `/admin/marketing-intelligence/referral-optimization` | referral conversion rate, cost per acquisition, top referrers                                                                                                                                               |
+| GET    | `/admin/marketing-intelligence/loyalty-optimization`  | active members, average balance, near-tier-upgrade members                                                                                                                                                  |
+| GET    | `/admin/marketing-intelligence/target-suggestions`    | per-RFM-segment campaign suggestion + recommended channel                                                                                                                                                   |
+| GET    | `/admin/executive/overview`                           | revenue/profit trend, product profitability, branch comparison, customer growth, peak hours, repeat/conversion rates, inventory costs, marketing ROI; `DateRangeQueryDto` params, CSV export is client-side |
+| GET    | `/admin/executive/forecast-vs-actual`                 | predicted vs. actual daily revenue                                                                                                                                                                          |
+| POST   | `/admin/ai-assistant/ask`                             | body: `{ question, branchId? }`; natural-language Q&A over the endpoints above — see below                                                                                                                  |
+
+### AI Assistant
+
+Same dependency-inverted provider pattern as `ChapaPaymentProvider`/
+`ConsoleSmsProvider`: with `ANTHROPIC_API_KEY` configured, the Claude API
+(`@anthropic-ai/sdk`, model `claude-opus-4-8`) routes the question to
+tool calls against the services above and phrases the answer from their
+real output — never estimates or invents a figure, and the system prompt
+says so explicitly. Without a key (the local/CI default), a deterministic
+keyword router picks the same tools directly, so behavior is identical
+either way, just without natural-language phrasing. Every query is logged
+to `AiAssistantQuery` (question, answer, which tools were called with what
+result, and an `outcome` of `ANSWERED`/`FALLBACK`/`ERROR`) so every answer
+is traceable back to the real data it cites.
 
 ## Audit logs (Phase 3)
 

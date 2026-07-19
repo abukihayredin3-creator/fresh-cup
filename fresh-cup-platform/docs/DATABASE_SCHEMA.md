@@ -108,8 +108,12 @@ speculatively — Phase 3's kitchen/delivery features run on
 | is_active              | boolean            |                                                    |
 | created_at, updated_at | timestamptz        |                                                    |
 
-`loyalty_tier` is deferred to Phase 6 (Loyalty rewards & promotions campaigns) rather than
-carried as an unused column until that ledger exists.
+A persisted `loyalty_tier` column is deferred to Phase 10 (Loyalty rewards
+& promotions campaigns) rather than carried as an unused column until that
+redemption ledger exists. Phase 6's `CustomerIntelligenceService`
+computes a read-only Bronze/Silver/Gold tier on demand from
+`loyalty_ledger`'s lifetime accrual instead — see "AI & Business
+Intelligence" below.
 
 ### `otp_codes`
 
@@ -338,12 +342,12 @@ cached per row so history never needs a recompute. Tied to a payment
 reaching `succeeded` (via the `order.paid` event), not to order placement
 or confirmation, so a cancelled/no-show order never earns points. Reasons
 are currently just `order_earned` and `manual_adjustment`; `redeemed`,
-`bonus`, and `expired` are added in Phase 6 alongside the redemption flow
+`bonus`, and `expired` are added in Phase 10 alongside the redemption flow
 itself.
 
 | id, user_id FK, order_id FK NULL, points_delta, reason (`order_earned`,`manual_adjustment`), balance_after, created_at |
 
-### `rewards_catalog` (Phase 6 — not yet implemented)
+### `rewards_catalog` (Phase 10 — not yet implemented)
 
 | id, name_en, name_am, points_cost, reward_type (`free_item`,`discount_percent`,`discount_amount`), menu_item_id FK NULL, is_active |
 
@@ -370,7 +374,13 @@ with a manual adjustment API. Phase 3 added recipe-based auto-deduction.
 
 ### `inventory_items`
 
-| id, branch_id FK, name, unit (`gram`,`milliliter`,`unit`), current_stock, reorder_threshold, unit_cost, is_active |
+| id, branch_id FK, name, unit (`gram`,`milliliter`,`unit`), current_stock, reorder_threshold, unit_cost, shelf_life_days NULL, is_active |
+
+`shelf_life_days` (Phase 6) is how many days a fresh restock is expected
+to stay usable — `NULL` for items that don't meaningfully expire (e.g.
+disposable cups). `InventoryIntelligenceService.expiryRisk` treats `NULL`
+as "not applicable" rather than zero risk; see "AI & Business
+Intelligence" below.
 
 `reorder_threshold` also drives the Phase 3 low-stock event
 (`InventoryService` compares `current_stock` to it after every adjustment
@@ -521,7 +531,49 @@ provider since Phase 2.
 
 | id, restaurant_name, default_locale, default_currency, default_tax_percent numeric(5,2), timezone, logo_url NULL, primary_color_hex NULL, support_email NULL, support_phone NULL, email_notifications, sms_notifications, push_notifications, updated_by_user_id FK NULL, created_at, updated_at |
 
-## 15. Analytics
+## 15. AI & Business Intelligence (Phase 6)
+
+Purely additive — nothing above this section changes shape. Recommendations,
+customer intelligence, inventory intelligence, and marketing intelligence
+are all computed on demand from tables Phases 1-5 already own (same
+on-demand-aggregate approach as section 16's Analytics); only forecasting
+persists anything, because "forecast vs. actual" requires a prediction to
+outlive the day it was made, and "replaceable/versioned models" requires a
+registry row to version against.
+
+### `ml_model_runs`
+
+One row per forecast-generation run. A "model" here is a hand-rolled
+statistical method (linear regression + trailing-average blend over Order
+history — see `ForecastingService`), not a trained artifact; `version`
+still lets an admin see which run a snapshot came from, and `metrics`
+holds its offline evaluation without a separate experiment-tracking
+system.
+
+| id, model_key, version, status (`ready`,`failed`), metrics jsonb NULL, notes NULL, trained_at | — unique (model_key, version) |
+
+### `forecast_snapshots`
+
+One row per (metric, granularity, target period, optional branch/menu
+item/inventory item) prediction. `actual_value` is backfilled once the
+period has passed (`ForecastingService.backfillActuals`, run nightly and
+on every admin-triggered regenerate) — left `NULL` until then rather than
+requiring a second write path.
+
+| id, model_run_id FK `ON DELETE CASCADE`, metric (`sales_revenue`,`sales_orders`,`hourly_demand`,`product_demand`,`ingredient_demand`), granularity (`hourly`,`daily`,`weekly`,`monthly`), target_period_start, branch_id FK NULL `ON DELETE CASCADE`, menu_item_id FK NULL `ON DELETE CASCADE`, inventory_item_id FK NULL `ON DELETE CASCADE`, predicted_value numeric(14,3), confidence numeric(4,3), actual_value numeric(14,3) NULL, created_at |
+
+### `ai_assistant_queries`
+
+Audit trail of AI Assistant Q&A. `tool_calls` records which intelligence-
+service methods were invoked and their raw results, so every answer is
+traceable back to the real data it cites — never a bare LLM claim.
+`outcome` is `answered` (Claude API, `ANTHROPIC_API_KEY` configured),
+`fallback` (deterministic keyword router, no key configured), or `error`
+(both paths failed; the fallback router still ran to produce an answer).
+
+| id, asked_by_user_id FK NULL, question, answer, tool_calls jsonb NULL, outcome (`answered`,`fallback`,`error`), created_at |
+
+## 16. Analytics
 
 Implemented in Phase 3 as on-demand aggregate queries against the live
 `orders`/`order_items` tables — deliberately not materialized views or a
@@ -546,7 +598,7 @@ If order-history volume ever makes these queries too slow, Phase 8
 same "don't build ahead of the need" reasoning as Phase 3's on-demand
 approach in the first place.
 
-## 16. Indexing notes
+## 17. Indexing notes
 
 - `orders(branch_id, status, created_at)` — kitchen queue & admin order list
 - `orders(user_id, created_at)` — customer order history
@@ -563,7 +615,7 @@ approach in the first place.
 - `audit_logs(entity_type, entity_id)`, `audit_logs(actor_user_id, created_at)` — audit-log lookups by entity or by actor (Phase 3)
 - Partition `orders` and `delivery_tracking_pings` by month once volume warrants it (Phase 9)
 
-## 17. Sample DDL sketch (illustrative, not exhaustive)
+## 18. Sample DDL sketch (illustrative, not exhaustive)
 
 ```sql
 create type order_status as enum (

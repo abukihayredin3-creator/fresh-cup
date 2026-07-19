@@ -53,7 +53,7 @@ breaking migration once real orders/customers exist.
   (global + per-user), applied atomically at checkout
 - Loyalty points: accrual ledger tied to a _settled_ payment (not just order
   placement), `GET /loyalty/me` for balance + history — tiers and a
-  redemption/rewards-catalog flow are Phase 6
+  redemption/rewards-catalog flow are Phase 10
 - Payments: dependency-inverted provider interface, Chapa (TeleBirr/CBE
   Birr/HelloCash/Amole/cards, sandbox fallback with no API key configured)
   - cash (pay-at-counter/on-delivery, staff-confirmed settlement), signed
@@ -138,7 +138,7 @@ breaking migration once real orders/customers exist.
   tracking/profile screens, and Expo push-token registration against the
   existing Phase 2 `POST /notifications/push-tokens` endpoint (delivery
   itself still needs a real Expo/FCM provider behind the Phase 2
-  `PushProvider` interface — currently `ConsolePushProvider`, see Phase 6)
+  `PushProvider` interface — currently `ConsolePushProvider`, see Phase 10)
 - Progressive Web App: installable manifest, an offline-caching service
   worker (cache-first app shell, stale-while-revalidate for menu/branch/
   category reads), and an offline banner
@@ -214,13 +214,139 @@ breaking migration once real orders/customers exist.
   database or the API directly; `apps/delivery` remains the one
   still-unbuilt frontend (its own PWA, not part of this phase's scope)
 
-## Phase 6 — Loyalty rewards & promotions campaigns
+## Phase 6 — AI & Business Intelligence Platform ✅
+
+- New `apps/api/src/modules/intelligence` module, purely additive on top of
+  Phases 1-5 — no existing endpoint, schema, or frontend page changed
+  shape. No Python ML service or training pipeline anywhere in this
+  stack: every "model" is a hand-rolled statistical method living
+  directly in this module, consistent with the codebase's established
+  preference for a dependency-light implementation over a heavy one
+  (the self-written RFC 6238 TOTP from Phase 5, the dependency-free CSV
+  export, the sandbox-fallback payment/SMS providers)
+- **Recommendation Engine**: frequently-bought-together (order
+  co-occurrence), similar products (category/tag content matching),
+  trending (7-day sales velocity), seasonal/featured picks, upsell/
+  cross-sell, and personalized picks — user-based collaborative
+  filtering first, falling back to category-affinity and then trending
+  when there isn't enough co-purchase signal, so it works for a
+  first-time or anonymous customer, not just loyalty members. Public
+  endpoints, surfaced in `apps/web` on the menu, product-detail, and
+  cart pages
+- **Customer Intelligence**: on-demand RFM segmentation (quantile-scored
+  against the live customer population), churn risk, predicted LTV,
+  purchase frequency, favorite categories, preferred order time/payment
+  method, coupon effectiveness, and a read-only Bronze/Silver/Gold
+  loyalty tier computed from the Phase 2 accrual ledger (distinct from
+  the persisted `loyalty_tier`/redemption flow still deferred to Phase 10)
+- **Sales Forecasting**: linear-regression + trailing-average blended
+  forecasts for daily/weekly/monthly revenue and order count, hourly
+  demand, and per-product demand, with day-of-week seasonal adjustment.
+  The one part of Phase 6 that persists anything (`MlModelRun` +
+  `ForecastSnapshot`) — versioned, with a nightly `@nestjs/schedule` job
+  (the only scheduled infrastructure in the codebase) and an admin
+  on-demand "regenerate now" trigger. `actualValue` backfills once a
+  forecast period elapses, powering forecast-vs-actual
+- **Inventory Intelligence**: extends the Phase 3 predicted-shortage
+  logic with waste probability (from the `waste`-reason ledger), expiry
+  risk (days-of-supply-on-hand vs. a new `InventoryItem.shelfLifeDays`
+  column), and a concrete suggested-reorder quantity/cost
+- **Marketing Intelligence**: campaign performance (estimated order-
+  volume lift around a send), coupon optimization (redemption rate + AOV
+  impact vs. baseline), referral/loyalty program health, and per-RFM-
+  segment campaign targeting suggestions — analysis over the existing
+  Phase 5 marketing tables, no new send pipeline
+- **Executive BI**: one overview endpoint — revenue/profit trend (COGS
+  estimated from `RecipeIngredient` costs), product profitability,
+  branch comparison, customer growth, peak hours, repeat-customer rate,
+  cart-to-order conversion, inventory costs, marketing ROI, and
+  forecast-vs-actual — with interactive date-range/branch filtering and
+  client-side CSV export, same pattern as Phase 5's analytics pages
+- **AI Assistant**: natural-language Q&A over all of the above. Same
+  dependency-inverted provider pattern as `ChapaPaymentProvider`: with
+  `ANTHROPIC_API_KEY` configured, the Claude API (`claude-opus-4-8`)
+  routes questions to tool calls against the real intelligence services
+  and phrases the answer from their output; without a key, a
+  deterministic keyword router picks the same tools directly. Either
+  way it never fabricates a figure — every answer is grounded in a
+  logged tool call (`AiAssistantQuery`), and the system prompt says so
+  explicitly
+- `apps/admin` gained an "Intelligence" nav section (Executive,
+  Forecasting, Customer AI, Inventory AI, Marketing AI, Recommendations
+  report, AI Assistant chat) built on the existing Phase 5 design system
+  (`Card`/`DataTable`/`StatCard`/chart widgets)
+- A new `pnpm --filter @fresh-cup/api prisma:demo-data` script (separate
+  from `prisma/seed.ts`, which deliberately excludes transactional data)
+  generates ~75 days of realistic historical orders so forecasting/RFM/
+  recommendations have real signal to compute against in development
+- 49 new unit tests across the intelligence services, following the
+  existing plain-jest-with-mocked-`PrismaService` convention; full suite
+  (197 tests) plus typecheck/lint clean
+- **Exit criteria:** an owner or manager can see AI-powered forecasts,
+  customer/inventory/marketing insights, and ask the AI assistant
+  business questions — all from `apps/admin` alone — and a customer
+  sees real, data-driven product recommendations while browsing/
+  checking out on `apps/web`, without any of it depending on an
+  external ML service or fabricating a number it can't back up
+
+## Phase 7 — Inventory forecasting & multi-supplier sourcing
+
+- Recipe-based auto-deduction and low-stock alerts shipped in Phase 3; the
+  supplier/purchase-order workflow gained invoice attachment, partial
+  payments, and per-supplier performance analytics in Phase 5. Demand
+  forecasting also landed early, twice: Phase 5's
+  `GET /admin/inventory/predicted-shortages` (days-until-stockout from a
+  trailing-consumption window), then Phase 6's
+  `GET /admin/inventory-intelligence` (the same predictor plus waste
+  probability, expiry risk, and a concrete suggested-reorder quantity/
+  cost) — so what's left is narrower than originally scoped:
+  multi-supplier price comparison on a single purchase order, deliberately
+  deferred out of Phase 3, 5, and 6 alike
+- **Exit criteria:** a purchase order can compare unit cost across more
+  than one supplier before it's submitted, instead of committing to a
+  single supplier's price up front
+
+## Phase 8 — Analytics at scale
+
+- Phase 3 shipped an on-demand admin dashboard and sales/item/customer
+  analytics; Phase 5 added kitchen/delivery analytics, a delivery heatmap
+  endpoint, CSV export on every analytics page, and a Reports hub
+  (including the audit-log viewer that had no frontend since Phase 3);
+  Phase 6 added a further on-demand layer on top (executive BI, RFM
+  customer segmentation, marketing analytics) plus the one exception to
+  "no materialized data" — `forecast_snapshots`, because a forecast has
+  to outlive the day it predicted. Everything else is still on-demand
+  queries, no materialized views or cron jobs beyond Phase 6's nightly
+  forecast-regeneration job. This phase is about what stops being viable
+  once order history grows past what an on-demand query scans
+  comfortably: nightly aggregation jobs materializing
+  `daily_sales_summary` and `item_performance`, and cohort retention
+  analysis
+- `apps/admin` analytics views already exist (Phase 5) and Intelligence
+  views (Phase 6) would both be extended here to consume the new
+  materialized aggregates, not built from scratch
+- **Exit criteria:** dashboard queries stay fast regardless of how many
+  years of order history exist
+
+## Phase 9 — Scale & hardening
+
+- Load testing (k6) against checkout and menu-read paths
+- Read-replica query routing for analytics, connection pooling tuning
+- `orders`/`delivery_tracking_pings` partitioning if volume warrants it
+- Third-party security audit / penetration test
+- Multi-branch activation: onboard a second Fresh Cup location using the existing `branch_id` scoping — a data/config exercise, not a schema migration
+- Observability maturity: defined SLOs, on-call alerting, quarterly DR restore drill
+
+## Phase 10 — Loyalty rewards & promotions campaigns
 
 - Loyalty tiers (calculated from the Phase 2 accrual ledger), rewards
   catalog, redemption flow (spend points for a discount/free item) —
   still entirely unbuilt; Phase 5's Marketing module added gift cards,
   referral codes, and generic push/email/SMS campaigns, but not a points
-  tier system or a redemption flow
+  tier system or a redemption flow. Phase 6 added a read-only
+  Bronze/Silver/Gold tier computed on demand for admin-side customer
+  intelligence — this phase is the persisted, customer-facing version
+  with an actual redemption flow
 - Coupon-specific campaigns: scheduling/targeting layered on the Phase 2
   coupon engine itself (validation, limits, redemption). Phase 5 shipped a
   general-purpose Marketing campaign engine (push/email/SMS, segment
@@ -235,47 +361,6 @@ breaking migration once real orders/customers exist.
   Phase 2 `PushProvider` interface, replacing `ConsolePushProvider` now
   that Phase 4 shipped a client that actually registers device tokens
 - **Exit criteria:** repeat customers can redeem points for a reward; marketing can run a scheduled coupon campaign without engineering involvement
-
-## Phase 7 — Inventory forecasting & multi-supplier sourcing
-
-- Recipe-based auto-deduction and low-stock alerts shipped in Phase 3; the
-  supplier/purchase-order workflow gained invoice attachment, partial
-  payments, and per-supplier performance analytics in Phase 5. Demand
-  forecasting also landed in Phase 5, earlier than planned here —
-  `GET /admin/inventory/predicted-shortages` computes days-until-stockout
-  per item from a trailing-consumption window, surfaced in `apps/admin`'s
-  inventory dashboard — so what's left is narrower than originally scoped:
-  multi-supplier price comparison on a single purchase order, deliberately
-  deferred out of both Phase 3 and Phase 5
-- **Exit criteria:** a purchase order can compare unit cost across more
-  than one supplier before it's submitted, instead of committing to a
-  single supplier's price up front
-
-## Phase 8 — Analytics at scale
-
-- Phase 3 shipped an on-demand admin dashboard and sales/item/customer
-  analytics; Phase 5 added kitchen/delivery analytics, a delivery heatmap
-  endpoint, CSV export on every analytics page, and a Reports hub
-  (including the audit-log viewer that had no frontend since Phase 3) —
-  all still on-demand queries, no materialized views or cron jobs. This
-  phase is about what stops being viable once order history grows past
-  what an on-demand query scans comfortably: nightly aggregation jobs
-  materializing `daily_sales_summary` and `item_performance`, and cohort
-  retention analysis
-- `apps/admin` analytics views already exist (Phase 5) and would be
-  extended here to consume the new materialized aggregates, not built
-  from scratch
-- **Exit criteria:** dashboard queries stay fast regardless of how many
-  years of order history exist
-
-## Phase 9 — Scale & hardening
-
-- Load testing (k6) against checkout and menu-read paths
-- Read-replica query routing for analytics, connection pooling tuning
-- `orders`/`delivery_tracking_pings` partitioning if volume warrants it
-- Third-party security audit / penetration test
-- Multi-branch activation: onboard a second Fresh Cup location using the existing `branch_id` scoping — a data/config exercise, not a schema migration
-- Observability maturity: defined SLOs, on-call alerting, quarterly DR restore drill
 
 ## Sequencing notes
 
@@ -300,12 +385,23 @@ breaking migration once real orders/customers exist.
   sequencing native after web, since both consume the same Phase 1–3 APIs
   and shared `packages/ui`/`packages/api-client`/`packages/types` — there
   was no unvalidated-API risk left to de-risk by staggering them.
-- Phase 5 (Admin Platform) came before the Phase 6–8 backend/analytics work
-  it partially fulfilled (loyalty redemption, demand forecasting, kitchen/
-  delivery analytics) because the highest-leverage move at that point was
-  giving staff a UI for everything Phases 1–3 had already built
-  API-only — a purchase order, a kitchen station, or a marketing campaign
-  is only useful to the business once someone can operate it without
-  calling the API by hand. Building the forecasting/aggregation-job work
-  in Phases 6–8 first would have meant polishing features nobody at Fresh
-  Cup could actually reach yet.
+- Phase 5 (Admin Platform) came before the Phase 7/8/10 backend work it
+  partially fulfilled (demand forecasting, aggregation-job analytics,
+  loyalty redemption — Phase 5 itself shipped kitchen/delivery analytics
+  directly) because the highest-leverage move at that point was giving
+  staff a UI for everything Phases 1–3 had already built API-only — a
+  purchase order, a kitchen station, or a marketing campaign is only
+  useful to the business once someone can operate it without calling the
+  API by hand. Building the forecasting/aggregation-job work first would
+  have meant polishing features nobody at Fresh Cup could actually reach
+  yet.
+- Phase 6 (AI & Business Intelligence) came directly after Phase 5 rather
+  than at the end of the roadmap because every one of its modules —
+  forecasting, RFM segmentation, recommendations — depends on `apps/admin`
+  already existing as a place to surface them; there would be nowhere to
+  put an "Intelligence" nav section in a staff dashboard that was still a
+  scaffold. It also deliberately jumped ahead of Phase 7's demand
+  forecasting (superseding the narrower "predicted shortages only" scope
+  originally planned there) and Phase 8's aggregation-job analytics
+  (Phase 6's forecast/RFM logic already needed the same on-demand-query
+  read paths Phase 8 would otherwise introduce materialized views for).

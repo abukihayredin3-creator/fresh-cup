@@ -20,6 +20,8 @@ fresh-cup-platform/
 │   │   │   │   ├── inventory/      # ingredients, recipes, purchase orders
 │   │   │   │   ├── notifications/  # SMS/push/email dispatch (queue consumers)
 │   │   │   │   ├── analytics/      # reporting endpoints, aggregation jobs
+│   │   │   │   ├── intelligence/   # Phase 6 — recommendations, customer/inventory/
+│   │   │   │   │                   #   marketing intelligence, forecasting, executive BI, AI assistant
 │   │   │   │   └── branches/       # branch/location management
 │   │   │   ├── common/             # guards, interceptors, pipes, decorators
 │   │   │   ├── websockets/         # /ws/orders, /ws/delivery gateways
