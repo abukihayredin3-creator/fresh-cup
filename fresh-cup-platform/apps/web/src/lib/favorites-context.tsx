@@ -39,7 +39,8 @@ export function FavoritesProvider({ children }: { children: ReactNode }) {
   const [favoriteIds, setFavoriteIds] = useState<string[]>([]);
 
   useEffect(() => {
-     
+    // localStorage is unavailable during SSR; hydrated post-mount.
+    // eslint-disable-next-line -- see comment above
     setFavoriteIds(readStorage());
   }, []);
 
@@ -53,7 +54,10 @@ export function FavoritesProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  const isFavorite = useCallback((menuItemId: string) => favoriteIds.includes(menuItemId), [favoriteIds]);
+  const isFavorite = useCallback(
+    (menuItemId: string) => favoriteIds.includes(menuItemId),
+    [favoriteIds],
+  );
 
   const value = useMemo(
     () => ({ favoriteIds, isFavorite, toggleFavorite }),

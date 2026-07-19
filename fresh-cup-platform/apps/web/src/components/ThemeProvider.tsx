@@ -39,7 +39,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     // the server-rendered markup always starts from the "light" default and is reconciled here.
     const stored = window.localStorage.getItem(STORAGE_KEY) as ThemePreference | null;
     const initial = stored ?? "system";
-     
+    // eslint-disable-next-line -- post-mount correction, see comment above
     setPreferenceState(initial);
     setResolvedTheme(resolve(initial));
   }, []);

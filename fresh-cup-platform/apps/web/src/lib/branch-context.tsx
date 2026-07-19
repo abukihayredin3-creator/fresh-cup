@@ -40,7 +40,7 @@ export function BranchProvider({ children }: { children: ReactNode }) {
     if (branchId || branches.length === 0) return;
     const stored = typeof window !== "undefined" ? window.localStorage.getItem(STORAGE_KEY) : null;
     const initial = branches.find((b) => b.id === stored) ?? branches[0];
-     
+    // eslint-disable-next-line -- see comment above
     if (initial) setBranchIdState(initial.id);
   }, [branches, branchId]);
 

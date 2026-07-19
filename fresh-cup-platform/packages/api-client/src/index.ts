@@ -8,6 +8,7 @@ import { LoyaltyResource } from "./resources/loyalty";
 import { NotificationsResource } from "./resources/notifications";
 import { OrdersResource } from "./resources/orders";
 import { PaymentsResource } from "./resources/payments";
+import { TablesResource } from "./resources/tables";
 import { UsersResource } from "./resources/users";
 
 export * from "./client";
@@ -21,6 +22,7 @@ export * from "./resources/loyalty";
 export * from "./resources/notifications";
 export * from "./resources/orders";
 export * from "./resources/payments";
+export * from "./resources/tables";
 export * from "./resources/users";
 
 export interface FreshCupApiClient {
@@ -35,6 +37,7 @@ export interface FreshCupApiClient {
   coupons: CouponsResource;
   loyalty: LoyaltyResource;
   notifications: NotificationsResource;
+  tables: TablesResource;
 }
 
 /** One client instance per app — pass the same `getAccessToken` every consumer uses for auth. */
@@ -52,5 +55,6 @@ export function createFreshCupClient(options: ApiClientOptions): FreshCupApiClie
     coupons: new CouponsResource(raw),
     loyalty: new LoyaltyResource(raw),
     notifications: new NotificationsResource(raw),
+    tables: new TablesResource(raw),
   };
 }

@@ -113,7 +113,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const stored = readStorage();
     if (stored) {
       setAccessToken(stored.accessToken);
-       
+      // eslint-disable-next-line -- see comment above
       setAccessTokenState(stored.accessToken);
       setUserState(stored.user);
       refreshTokenRef.current = stored.refreshToken;

@@ -10,6 +10,18 @@ module.exports = tseslint.config(
   ...tseslint.configs.recommended,
   prettier,
   {
+    // This is the *root* fallback config lint-staged runs from repo root, covering files
+    // across every package — it deliberately doesn't register app-specific plugins (React
+    // hooks, Expo, Nest, ...). Without this, `eslint --fix` treats any disable comment
+    // targeting one of those rules as "unused" (since the rule isn't registered here) and
+    // silently deletes it, even though it's load-bearing under the file's own app-level
+    // config. Off here, not just defaulted, so a pre-commit pass never mutates intent it
+    // can't see.
+    linterOptions: {
+      reportUnusedDisableDirectives: "off",
+    },
+  },
+  {
     ignores: [
       "**/dist/**",
       "**/build/**",

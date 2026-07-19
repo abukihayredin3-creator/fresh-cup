@@ -7,7 +7,12 @@ export function setAccessToken(token: string | null): void {
   currentAccessToken = token;
 }
 
+const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api/v1";
+
 export const api = createFreshCupClient({
-  baseUrl: process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api/v1",
+  baseUrl: apiBaseUrl,
   getAccessToken: () => currentAccessToken,
 });
+
+/** The bare server origin (no /api/v1 prefix) — Nest WebSocket gateways aren't under the REST global prefix. */
+export const apiOrigin = apiBaseUrl.replace(/\/api\/v1\/?$/, "");

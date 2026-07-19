@@ -15,3 +15,11 @@ export interface Table {
   qrToken: string;
   isActive: boolean;
 }
+
+/** What scanning a table's QR code resolves to — just enough to start a dine-in order. */
+export interface ResolveTableResult {
+  tableId: string;
+  tableLabel: string;
+  branchId: string;
+  branchName: string;
+}

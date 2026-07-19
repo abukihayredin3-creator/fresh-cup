@@ -14,6 +14,7 @@ import { BranchProvider } from "@/lib/branch-context";
 import { CartProvider } from "@/lib/cart-context";
 import { FavoritesProvider } from "@/lib/favorites-context";
 import { QueryProvider } from "@/lib/query-provider";
+import { DineInTableProvider } from "@/lib/table-context";
 import "../globals.css";
 
 const inter = Inter({
@@ -70,18 +71,20 @@ export default async function LocaleLayout({
             <QueryProvider>
               <AuthProvider>
                 <BranchProvider>
-                  <CartProvider>
-                    <FavoritesProvider>
-                      <ToastProvider>
-                        <SkipLink />
-                        <Header />
-                        <main id="main-content" className="flex flex-1 flex-col">
-                          {children}
-                        </main>
-                        <Footer />
-                      </ToastProvider>
-                    </FavoritesProvider>
-                  </CartProvider>
+                  <DineInTableProvider>
+                    <CartProvider>
+                      <FavoritesProvider>
+                        <ToastProvider>
+                          <SkipLink />
+                          <Header />
+                          <main id="main-content" className="flex flex-1 flex-col">
+                            {children}
+                          </main>
+                          <Footer />
+                        </ToastProvider>
+                      </FavoritesProvider>
+                    </CartProvider>
+                  </DineInTableProvider>
                 </BranchProvider>
               </AuthProvider>
             </QueryProvider>
