@@ -13,3 +13,4 @@ export * from "./notification";
 export * from "./delivery";
 export * from "./auth";
 export * from "./realtime";
+export * from "./admin";

@@ -56,6 +56,10 @@ export interface MenuItem {
   sortOrder: number;
   prepTimeSeconds: number;
   stationId: string | null;
+  nutrition: Record<string, unknown> | null;
+  isPopular: boolean;
+  isFeatured: boolean;
+  isSeasonal: boolean;
   images: MenuItemImage[];
   modifierGroups: MenuItemModifierGroup[];
 }
