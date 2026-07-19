@@ -28,16 +28,25 @@ datasource db {
 // Enums
 // ---------------------------------------------------------------------------
 
-/// KITCHEN (a dedicated kitchen-staff role, distinct from front-of-house
-/// STAFF) and SUPER_ADMIN (multi-branch HQ management) are added in later
-/// phases rather than modeled speculatively now — Phase 3 kitchen/delivery
-/// features use the existing STAFF/MANAGER/ADMIN roles plus the new DRIVER.
+/// Phase 5 adds the granular front-of-house/back-of-house roles the Phase 1
+/// comment on this enum deferred (KITCHEN et al.) — STAFF remains as a
+/// generic fallback for staff that don't fit a narrower role, so existing
+/// seeded/created STAFF accounts keep working unchanged. "Owner" (from the
+/// Phase 5 spec) is not a separate role: it's `User.isOwner` on an ADMIN
+/// account, since Owner is a permissions superset of Admin, not a disjoint
+/// set of endpoints — modeling it as its own enum value would mean
+/// duplicating every `@Roles(UserRole.ADMIN)` guard across Phases 1-4.
 enum UserRole {
   CUSTOMER
   STAFF
   MANAGER
   ADMIN
   DRIVER
+  CASHIER
+  KITCHEN
+  WAITER
+  INVENTORY_STAFF
+  MARKETING_STAFF
 }
 
 enum Locale {
@@ -150,6 +159,50 @@ enum PurchaseOrderStatus {
   CANCELLED
 }
 
+/// Phase 5 — admin platform.
+/// Fine-grained, additive capability grants layered on top of the fixed
+/// `UserRole` enum (see the comment there) — this is how "custom roles"
+/// from the Phase 5 spec is implemented: a manager can grant a CASHIER
+/// account MENU_EDIT without needing a new role enum value or touching any
+/// existing `@Roles()` guard.
+enum PermissionKey {
+  MENU_EDIT
+  INVENTORY_MANAGE
+  PURCHASING_MANAGE
+  EMPLOYEE_MANAGE
+  MARKETING_MANAGE
+  SETTINGS_MANAGE
+  REPORTS_VIEW
+  FINANCE_VIEW
+}
+
+enum ShiftStatus {
+  SCHEDULED
+  COMPLETED
+  MISSED
+  CANCELLED
+}
+
+enum CampaignChannel {
+  PUSH
+  EMAIL
+  SMS
+}
+
+enum CampaignStatus {
+  DRAFT
+  SCHEDULED
+  SENT
+  CANCELLED
+}
+
+enum CampaignSegment {
+  ALL_CUSTOMERS
+  ACTIVE_CUSTOMERS
+  INACTIVE_CUSTOMERS
+  VIP_CUSTOMERS
+}
+
 // ---------------------------------------------------------------------------
 // Branches
 // ---------------------------------------------------------------------------
@@ -162,6 +215,8 @@ model Branch {
   lng         Decimal? @db.Decimal(9, 6)
   phone       String?
   isActive    Boolean  @default(true) @map("is_active")
+  managerId   String?  @map("manager_id")
+  manager     User?    @relation("BranchManager", fields: [managerId], references: [id], onDelete: SetNull)
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
@@ -178,7 +233,13 @@ model Branch {
   deliveries      Delivery[]
   suppliers       Supplier[]
   purchaseOrders  PurchaseOrder[]
+  hours           BranchHours[]
+  departments     Department[]
+  shifts          Shift[]
+  attendances     Attendance[]
+  banners         Banner[]
 
+  @@index([managerId])
   @@map("branches")
 }
 
@@ -187,35 +248,62 @@ model Branch {
 // ---------------------------------------------------------------------------
 
 model User {
-  id           String   @id @default(uuid())
-  phone        String?  @unique
-  email        String?  @unique
-  passwordHash String?  @map("password_hash")
-  fullName     String   @map("full_name")
-  role         UserRole @default(CUSTOMER)
-  branchId     String?  @map("branch_id")
-  branch       Branch?  @relation(fields: [branchId], references: [id])
-  locale       Locale   @default(EN)
-  isActive     Boolean  @default(true) @map("is_active")
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
+  id               String      @id @default(uuid())
+  phone            String?     @unique
+  email            String?     @unique
+  passwordHash     String?     @map("password_hash")
+  fullName         String      @map("full_name")
+  role             UserRole    @default(CUSTOMER)
+  branchId         String?     @map("branch_id")
+  branch           Branch?     @relation(fields: [branchId], references: [id])
+  locale           Locale      @default(EN)
+  isActive         Boolean     @default(true) @map("is_active")
+  /// Owner is a permissions superset of Admin on the same ADMIN role — see
+  /// the UserRole enum comment for why this isn't a separate role value.
+  isOwner          Boolean     @default(false) @map("is_owner")
+  departmentId     String?     @map("department_id")
+  department       Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  /// Employee-facing placeholder, not a payroll system — see Phase 5 scope
+  /// notes in docs/ROADMAP.md. Only ever read/written by ADMIN-gated
+  /// endpoints; never included in the customer-facing `/users/me` response.
+  salary           Decimal?    @db.Decimal(10, 2)
+  twoFactorEnabled Boolean     @default(false) @map("two_factor_enabled")
+  /// Set once during enrollment, cleared on disable — never returned by any
+  /// endpoint after enrollment completes.
+  twoFactorSecret  String?     @map("two_factor_secret")
+  createdAt        DateTime    @default(now()) @map("created_at")
+  updatedAt        DateTime    @updatedAt @map("updated_at")
 
-  addresses             Address[]
-  refreshTokens         RefreshToken[]
-  inventoryTransactions InventoryTransaction[]
-  carts                 Cart[]
-  orders                Order[]
-  orderStatusChanges    OrderStatusHistory[]
-  loyaltyEntries        LoyaltyLedger[]
-  pushTokens            PushToken[]
-  couponRedemptions     CouponRedemption[]
-  notificationLogs      NotificationLog[]
-  driverProfile         DriverProfile?
-  deliveriesAsDriver    Delivery[]
-  createdPurchaseOrders PurchaseOrder[]
-  auditLogs             AuditLog[]
+  addresses                Address[]
+  refreshTokens            RefreshToken[]
+  inventoryTransactions    InventoryTransaction[]
+  carts                    Cart[]
+  orders                   Order[]
+  orderStatusChanges       OrderStatusHistory[]
+  loyaltyEntries           LoyaltyLedger[]
+  pushTokens               PushToken[]
+  couponRedemptions        CouponRedemption[]
+  notificationLogs         NotificationLog[]
+  driverProfile            DriverProfile?
+  deliveriesAsDriver       Delivery[]
+  createdPurchaseOrders    PurchaseOrder[]
+  auditLogs                AuditLog[]
+  managedBranches          Branch[]               @relation("BranchManager")
+  shifts                   Shift[]
+  attendances              Attendance[]
+  permissionsGranted       StaffPermission[]      @relation("PermissionSubject")
+  permissionsAwarded       StaffPermission[]      @relation("PermissionGrantedBy")
+  performanceNotes         PerformanceNote[]      @relation("PerformanceSubject")
+  performanceNotesAuthored PerformanceNote[]      @relation("PerformanceAuthor")
+  giftCardsReceived        GiftCard[]
+  referralCode             ReferralCode?
+  referralRedemption       ReferralRedemption?
+  productReviews           ProductReview[]
+  campaignsCreated         Campaign[]
+  apiKeysCreated           ApiKey[]
 
   @@index([branchId])
+  @@index([departmentId])
   @@map("users")
 }
 
@@ -305,7 +393,15 @@ model MenuItem {
   basePrice       Int             @map("base_price")
   isAvailable     Boolean         @default(true) @map("is_available")
   calories        Int?
+  /// Free-form nutrition facts (protein/carbs/fat/sugar grams, etc.) —
+  /// deliberately a JSON bag rather than dedicated columns, since which
+  /// facts a given product publishes varies and the customer-facing app
+  /// doesn't currently render it structured beyond `calories`.
+  nutrition       Json?
   tags            String[]        @default([])
+  isPopular       Boolean         @default(false) @map("is_popular")
+  isFeatured      Boolean         @default(false) @map("is_featured")
+  isSeasonal      Boolean         @default(false) @map("is_seasonal")
   sortOrder       Int             @default(0) @map("sort_order")
   /// Estimated prep time — used to flag a kitchen-queue order as running
   /// late (elapsed since `preparingAt` vs. the max across its items).
@@ -320,6 +416,7 @@ model MenuItem {
   cartItems          CartItem[]
   orderItems         OrderItem[]
   recipeIngredients  RecipeIngredient[]
+  reviews            ProductReview[]
 
   @@index([branchId, categoryId])
   @@index([branchId, isAvailable])
@@ -562,12 +659,15 @@ model Order {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  items            OrderItem[]
-  statusHistory    OrderStatusHistory[]
-  payments         Payment[]
-  couponRedemption CouponRedemption?
-  loyaltyEntries   LoyaltyLedger[]
-  delivery         Delivery?
+  items                OrderItem[]
+  statusHistory        OrderStatusHistory[]
+  payments             Payment[]
+  couponRedemption     CouponRedemption?
+  loyaltyEntries       LoyaltyLedger[]
+  delivery             Delivery?
+  productReviews       ProductReview[]
+  giftCardTransactions GiftCardTransaction[]
+  referralRedemption   ReferralRedemption?
 
   @@index([branchId, status, createdAt])
   @@index([userId, createdAt])
@@ -908,10 +1008,15 @@ model PurchaseOrder {
   createdByUser   User?               @relation(fields: [createdByUserId], references: [id])
   submittedAt     DateTime?           @map("submitted_at")
   receivedAt      DateTime?           @map("received_at")
+  /// Phase 5: an uploaded/entered invoice reference for the PO — no OCR or
+  /// accounting-system integration, just a record of "here's the invoice".
+  invoiceNumber   String?             @map("invoice_number")
+  invoiceUrl      String?             @map("invoice_url")
   createdAt       DateTime            @default(now()) @map("created_at")
   updatedAt       DateTime            @updatedAt @map("updated_at")
 
-  lines PurchaseOrderLine[]
+  lines    PurchaseOrderLine[]
+  payments PurchaseOrderPayment[]
 
   @@index([branchId, status])
   @@map("purchase_orders")
@@ -953,4 +1058,293 @@ model AuditLog {
   @@index([entityType, entityId])
   @@index([actorUserId, createdAt])
   @@map("audit_logs")
+}
+
+model PurchaseOrderPayment {
+  id              String        @id @default(uuid())
+  purchaseOrderId String        @map("purchase_order_id")
+  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  amount          Int
+  method          String
+  note            String?
+  paidAt          DateTime      @default(now()) @map("paid_at")
+  createdAt       DateTime      @default(now()) @map("created_at")
+
+  @@index([purchaseOrderId])
+  @@map("purchase_order_payments")
+}
+
+// ---------------------------------------------------------------------------
+// Phase 5 — Admin platform: branch hours, employees, settings, marketing,
+// reviews, security. Every model below is purely additive — nothing above
+// this section changes shape, so Phases 1-4 keep working unmodified.
+// ---------------------------------------------------------------------------
+
+/// One row per (branch, day-of-week 0=Sunday..6=Saturday). Times are plain
+/// "HH:mm" strings rather than DateTime — these are wall-clock opening
+/// hours, not instants, and a bare TIME column buys nothing extra here.
+model BranchHours {
+  id        String   @id @default(uuid())
+  branchId  String   @map("branch_id")
+  branch    Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  dayOfWeek Int      @map("day_of_week")
+  opensAt   String?  @map("opens_at")
+  closesAt  String?  @map("closes_at")
+  isClosed  Boolean  @default(false) @map("is_closed")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([branchId, dayOfWeek])
+  @@map("branch_hours")
+}
+
+model Department {
+  id        String   @id @default(uuid())
+  branchId  String?  @map("branch_id")
+  branch    Branch?  @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  name      String
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  employees User[]
+
+  @@index([branchId])
+  @@map("departments")
+}
+
+model Shift {
+  id        String      @id @default(uuid())
+  userId    String      @map("user_id")
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  branchId  String      @map("branch_id")
+  branch    Branch      @relation(fields: [branchId], references: [id])
+  startsAt  DateTime    @map("starts_at")
+  endsAt    DateTime    @map("ends_at")
+  status    ShiftStatus @default(SCHEDULED)
+  notes     String?
+  createdAt DateTime    @default(now()) @map("created_at")
+  updatedAt DateTime    @updatedAt @map("updated_at")
+
+  @@index([branchId, startsAt])
+  @@index([userId, startsAt])
+  @@map("shifts")
+}
+
+/// Simple clock-in/clock-out record — one open row (`clockOutAt` null) per
+/// user at a time, enforced at the service layer, not the DB.
+model Attendance {
+  id         String    @id @default(uuid())
+  userId     String    @map("user_id")
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  branchId   String    @map("branch_id")
+  branch     Branch    @relation(fields: [branchId], references: [id])
+  clockInAt  DateTime  @default(now()) @map("clock_in_at")
+  clockOutAt DateTime? @map("clock_out_at")
+  notes      String?
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  @@index([userId, clockInAt])
+  @@index([branchId, clockInAt])
+  @@map("attendances")
+}
+
+/// Additive per-user capability grants — see the PermissionKey enum comment
+/// for why this exists alongside the fixed UserRole enum.
+model StaffPermission {
+  id              String        @id @default(uuid())
+  userId          String        @map("user_id")
+  user            User          @relation("PermissionSubject", fields: [userId], references: [id], onDelete: Cascade)
+  permission      PermissionKey
+  grantedByUserId String?       @map("granted_by_user_id")
+  grantedByUser   User?         @relation("PermissionGrantedBy", fields: [grantedByUserId], references: [id])
+  createdAt       DateTime      @default(now()) @map("created_at")
+
+  @@unique([userId, permission])
+  @@index([userId])
+  @@map("staff_permissions")
+}
+
+model PerformanceNote {
+  id           String   @id @default(uuid())
+  userId       String   @map("user_id")
+  user         User     @relation("PerformanceSubject", fields: [userId], references: [id], onDelete: Cascade)
+  authorUserId String?  @map("author_user_id")
+  authorUser   User?    @relation("PerformanceAuthor", fields: [authorUserId], references: [id])
+  rating       Int?
+  note         String
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@index([userId, createdAt])
+  @@map("performance_notes")
+}
+
+/// Single-row (or one row per key area) global configuration — a singleton
+/// pattern enforced at the service layer (get-or-create the one row) rather
+/// than a schema constraint, matching how `RestaurantSettingsService` reads
+/// it. Deliberately does NOT hold payment/SMS/email provider credentials —
+/// those stay in environment variables, same as every provider since Phase
+/// 2 (`ConsoleSmsProvider`, Chapa keys, ...); this only holds
+/// business-facing configuration an owner edits from the UI.
+model RestaurantSettings {
+  id                 String   @id @default(uuid())
+  restaurantName     String   @default("Fresh Cup Juice House") @map("restaurant_name")
+  defaultLocale      Locale   @default(EN) @map("default_locale")
+  defaultCurrency    String   @default("ETB") @map("default_currency")
+  defaultTaxPercent  Decimal  @default(0) @map("default_tax_percent") @db.Decimal(5, 2)
+  timezone           String   @default("Africa/Addis_Ababa")
+  logoUrl            String?  @map("logo_url")
+  primaryColorHex    String?  @map("primary_color_hex")
+  supportEmail       String?  @map("support_email")
+  supportPhone       String?  @map("support_phone")
+  emailNotifications Boolean  @default(true) @map("email_notifications")
+  smsNotifications   Boolean  @default(true) @map("sms_notifications")
+  pushNotifications  Boolean  @default(true) @map("push_notifications")
+  updatedByUserId    String?  @map("updated_by_user_id")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  @@map("restaurant_settings")
+}
+
+model Banner {
+  id        String    @id @default(uuid())
+  branchId  String?   @map("branch_id")
+  branch    Branch?   @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  title     String
+  imageUrl  String    @map("image_url")
+  linkUrl   String?   @map("link_url")
+  startsAt  DateTime? @map("starts_at")
+  endsAt    DateTime? @map("ends_at")
+  isActive  Boolean   @default(true) @map("is_active")
+  sortOrder Int       @default(0) @map("sort_order")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  @@index([branchId, isActive])
+  @@map("banners")
+}
+
+model GiftCard {
+  id             String    @id @default(uuid())
+  code           String    @unique
+  initialBalance Int       @map("initial_balance")
+  currentBalance Int       @map("current_balance")
+  issuedToUserId String?   @map("issued_to_user_id")
+  issuedToUser   User?     @relation(fields: [issuedToUserId], references: [id])
+  isActive       Boolean   @default(true) @map("is_active")
+  expiresAt      DateTime? @map("expires_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  transactions GiftCardTransaction[]
+
+  @@map("gift_cards")
+}
+
+/// Append-only ledger, same pattern as InventoryTransaction/LoyaltyLedger —
+/// `GiftCard.currentBalance` is a cached projection kept in sync by the
+/// service layer.
+model GiftCardTransaction {
+  id         String   @id @default(uuid())
+  giftCardId String   @map("gift_card_id")
+  giftCard   GiftCard @relation(fields: [giftCardId], references: [id], onDelete: Cascade)
+  amount     Int
+  orderId    String?  @map("order_id")
+  order      Order?   @relation(fields: [orderId], references: [id])
+  note       String?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([giftCardId, createdAt])
+  @@map("gift_card_transactions")
+}
+
+model ReferralCode {
+  id           String   @id @default(uuid())
+  userId       String   @unique @map("user_id")
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  code         String   @unique
+  rewardAmount Int      @map("reward_amount")
+  usesCount    Int      @default(0) @map("uses_count")
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  redemptions ReferralRedemption[]
+
+  @@map("referral_codes")
+}
+
+/// One redemption per referred user, enforced by `@unique` on
+/// `referredUserId` — a customer can only have been referred once.
+model ReferralRedemption {
+  id             String       @id @default(uuid())
+  referralCodeId String       @map("referral_code_id")
+  referralCode   ReferralCode @relation(fields: [referralCodeId], references: [id])
+  referredUserId String       @unique @map("referred_user_id")
+  referredUser   User         @relation(fields: [referredUserId], references: [id])
+  orderId        String?      @unique @map("order_id")
+  order          Order?       @relation(fields: [orderId], references: [id])
+  createdAt      DateTime     @default(now()) @map("created_at")
+
+  @@index([referralCodeId])
+  @@map("referral_redemptions")
+}
+
+/// Send-side reuses the existing Phase 2 console SMS/email/push providers
+/// (see `NotificationsModule`) — sending a campaign is dispatching one
+/// notification per targeted user through those same provider interfaces,
+/// not a new delivery pipeline. `targetSegment` selects the recipient set
+/// at send time rather than storing a materialized recipient list.
+model Campaign {
+  id              String          @id @default(uuid())
+  name            String
+  channel         CampaignChannel
+  message         String
+  targetSegment   CampaignSegment @default(ALL_CUSTOMERS) @map("target_segment")
+  status          CampaignStatus  @default(DRAFT)
+  scheduledAt     DateTime?       @map("scheduled_at")
+  sentAt          DateTime?       @map("sent_at")
+  recipientCount  Int?            @map("recipient_count")
+  createdByUserId String?         @map("created_by_user_id")
+  createdByUser   User?           @relation(fields: [createdByUserId], references: [id])
+  createdAt       DateTime        @default(now()) @map("created_at")
+  updatedAt       DateTime        @updatedAt @map("updated_at")
+
+  @@index([status, scheduledAt])
+  @@map("campaigns")
+}
+
+model ProductReview {
+  id         String   @id @default(uuid())
+  menuItemId String   @map("menu_item_id")
+  menuItem   MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  userId     String   @map("user_id")
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orderId    String?  @map("order_id")
+  order      Order?   @relation(fields: [orderId], references: [id])
+  rating     Int
+  comment    String?
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@unique([menuItemId, userId])
+  @@index([menuItemId])
+  @@map("product_reviews")
+}
+
+/// Admin-managed API keys for external integrations — the key itself is
+/// shown once at creation and only its hash (same pattern as
+/// RefreshToken.tokenHash) is stored.
+model ApiKey {
+  id              String    @id @default(uuid())
+  name            String
+  keyHash         String    @unique @map("key_hash")
+  keyPrefix       String    @map("key_prefix")
+  createdByUserId String?   @map("created_by_user_id")
+  createdByUser   User?     @relation(fields: [createdByUserId], references: [id])
+  lastUsedAt      DateTime? @map("last_used_at")
+  revokedAt       DateTime? @map("revoked_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  @@index([createdByUserId])
+  @@map("api_keys")
 }
