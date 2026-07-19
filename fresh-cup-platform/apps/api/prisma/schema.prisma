@@ -13,7 +13,11 @@
 // demand forecasting, AI assistant query log. Phase 7: Restaurant
 // Intelligence Platform — long-term AI memory (conversations/decisions/
 // recommendations/accepted-or-rejected suggestions) and a provider-agnostic
-// vector index backing RAG retrieval (see apps/api/src/intelligence/). See
+// vector index backing RAG retrieval (see apps/api/src/intelligence/).
+// Phase 11 Part 2: Predictive Intelligence Platform — a standalone model
+// registry (deployment-stage lifecycle + dataset lineage) and drift alerts
+// backing prediction/forecasting/segmentation/drift/training under the same
+// apps/api/src/intelligence/ tree. See
 // fresh-cup-platform/docs/DATABASE_SCHEMA.md and docs/ROADMAP.md.
 //
 // IDs use Prisma's default (client-generated UUIDv4) rather than a
@@ -1540,4 +1544,73 @@ model VectorEntry {
 
   @@index([namespace])
   @@map("vector_entries")
+}
+
+// ---------------------------------------------------------------------------
+// Predictive Intelligence Platform (Phase 11 Part 2)
+// ---------------------------------------------------------------------------
+
+enum PredictiveModelStage {
+  EXPERIMENTAL
+  STAGING
+  PRODUCTION
+  ARCHIVED
+}
+
+enum DriftType {
+  FEATURE_DRIFT
+  PREDICTION_DRIFT
+  DATA_DRIFT
+  CONCEPT_DRIFT
+}
+
+enum DriftSeverity {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+/// A richer, standalone registry from Phase 6's `MlModelRun` (which only
+/// tracks forecast-generation runs) — this one tracks every hand-rolled
+/// "model" in prediction/, segmentation/, and forecasting/, with the
+/// deployment-stage lifecycle and dataset lineage Phase 6 never needed.
+/// Deliberately a new table rather than adding these columns to
+/// `MlModelRun`, so Phase 6's forecasting code and schema stay untouched.
+model PredictiveModelRun {
+  id             String                @id @default(uuid())
+  modelKey       String                @map("model_key")
+  version        Int
+  status         MlModelStatus         @default(READY)
+  deploymentStage PredictiveModelStage @default(EXPERIMENTAL) @map("deployment_stage")
+  datasetHash    String                @map("dataset_hash")
+  datasetVersion String                @map("dataset_version")
+  sampleCount    Int                   @map("sample_count")
+  featureSchema  Json                  @map("feature_schema")
+  metrics        Json?
+  notes          String?
+  trainedAt      DateTime              @default(now()) @map("trained_at")
+
+  @@unique([modelKey, version])
+  @@index([modelKey, deploymentStage])
+  @@map("predictive_model_runs")
+}
+
+/// One row per detected drift event — feature/prediction/data/concept —
+/// surfaced at `GET /admin/ai/drift` and the trigger record consulted by
+/// the retraining pipeline (training/retraining.service.ts).
+model DriftAlert {
+  id             String        @id @default(uuid())
+  modelKey       String        @map("model_key")
+  driftType      DriftType     @map("drift_type")
+  severity       DriftSeverity
+  metricName     String        @map("metric_name")
+  baselineValue  Float         @map("baseline_value")
+  currentValue   Float         @map("current_value")
+  detail         String
+  detectedAt     DateTime      @default(now()) @map("detected_at")
+  resolvedAt     DateTime?     @map("resolved_at")
+
+  @@index([modelKey, detectedAt])
+  @@index([resolvedAt])
+  @@map("drift_alerts")
 }
