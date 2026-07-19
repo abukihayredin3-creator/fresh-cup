@@ -26,6 +26,10 @@ import { CopilotController } from "./copilot/copilot.controller";
 import { CopilotService } from "./copilot/copilot.service";
 import { KnowledgeBaseController } from "./knowledge-base/knowledge-base.controller";
 import { KnowledgeBaseService } from "./knowledge-base/knowledge-base.service";
+import { AutomationController } from "./workflows/automation.controller";
+import { AutomationService } from "./workflows/automation.service";
+import { WorkflowEngineService } from "./workflows/workflow-engine.service";
+import { WorkflowsController } from "./workflows/workflows.controller";
 import { AssistantAiController } from "./controllers/assistant-ai.controller";
 import { AiMemoryController } from "./controllers/ai-memory.controller";
 import { CustomerAiController } from "./controllers/customer-ai.controller";
@@ -109,6 +113,8 @@ import { EmbeddingBackfillWorker } from "./workers/embedding-backfill.worker";
     DecisionEngineController,
     CopilotController,
     KnowledgeBaseController,
+    WorkflowsController,
+    AutomationController,
     ExecutiveAiController,
     SalesAiController,
     CustomerAiController,
@@ -141,6 +147,8 @@ import { EmbeddingBackfillWorker } from "./workers/embedding-backfill.worker";
     DecisionEngineService,
     CopilotService,
     KnowledgeBaseService,
+    WorkflowEngineService,
+    AutomationService,
     {
       provide: LLM_PROVIDER_TOKEN,
       useFactory: createLlmProvider,
