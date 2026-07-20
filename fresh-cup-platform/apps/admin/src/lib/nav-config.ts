@@ -70,6 +70,10 @@ export const NAV_SECTIONS: NavSectionConfig[] = [
     items: [{ href: "/ai-studio", label: "AI Studio", roles: MANAGEMENT }],
   },
   {
+    label: "Enterprise",
+    items: [{ href: "/enterprise", label: "Enterprise", roles: MANAGEMENT }],
+  },
+  {
     label: "Organization",
     items: [
       { href: "/branches", label: "Branches", roles: MANAGEMENT },

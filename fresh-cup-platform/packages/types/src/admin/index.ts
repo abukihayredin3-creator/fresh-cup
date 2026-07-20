@@ -4,6 +4,7 @@ export * from "./audit";
 export * from "./catalog";
 export * from "./delivery";
 export * from "./employees";
+export * from "./enterprise";
 export * from "./intelligence";
 export * from "./inventory";
 export * from "./kitchen";

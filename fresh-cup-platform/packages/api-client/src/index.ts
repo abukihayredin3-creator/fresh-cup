@@ -6,6 +6,7 @@ import { AdminAuditResource } from "./resources/admin/audit";
 import { AdminBranchesResource } from "./resources/admin/branches";
 import { AdminDeliveryResource } from "./resources/admin/delivery";
 import { AdminEmployeesResource } from "./resources/admin/employees";
+import { AdminEnterpriseResource } from "./resources/admin/enterprise";
 import { AdminIntelligenceResource } from "./resources/admin/intelligence";
 import { AdminInventoryResource } from "./resources/admin/inventory";
 import { AdminKitchenResource } from "./resources/admin/kitchen";
@@ -37,6 +38,7 @@ export * from "./resources/admin/audit";
 export * from "./resources/admin/branches";
 export * from "./resources/admin/delivery";
 export * from "./resources/admin/employees";
+export * from "./resources/admin/enterprise";
 export * from "./resources/admin/intelligence";
 export * from "./resources/admin/inventory";
 export * from "./resources/admin/kitchen";
@@ -80,6 +82,7 @@ export interface FreshCupAdminApiClient {
   reviews: AdminReviewsResource;
   intelligence: AdminIntelligenceResource;
   aiStudio: AdminAiStudioResource;
+  enterprise: AdminEnterpriseResource;
 }
 
 export interface FreshCupApiClient {
@@ -134,6 +137,7 @@ export function createFreshCupClient(options: ApiClientOptions): FreshCupApiClie
       reviews: new AdminReviewsResource(raw),
       intelligence: new AdminIntelligenceResource(raw),
       aiStudio: new AdminAiStudioResource(raw),
+      enterprise: new AdminEnterpriseResource(raw),
     },
   };
 }
