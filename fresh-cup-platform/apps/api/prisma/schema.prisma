@@ -475,6 +475,7 @@ model MenuCategory {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   menuItems MenuItem[]
+  taxRules  TaxRule[]
 
   @@index([branchId])
   @@map("menu_categories")
@@ -511,13 +512,14 @@ model MenuItem {
   createdAt       DateTime        @default(now()) @map("created_at")
   updatedAt       DateTime        @updatedAt @map("updated_at")
 
-  images             MenuItemImage[]
-  modifierGroupLinks MenuItemModifierGroup[]
-  cartItems          CartItem[]
-  orderItems         OrderItem[]
-  recipeIngredients  RecipeIngredient[]
-  reviews            ProductReview[]
-  forecastSnapshots  ForecastSnapshot[]
+  images                 MenuItemImage[]
+  modifierGroupLinks     MenuItemModifierGroup[]
+  cartItems              CartItem[]
+  orderItems             OrderItem[]
+  recipeIngredients      RecipeIngredient[]
+  reviews                ProductReview[]
+  forecastSnapshots      ForecastSnapshot[]
+  regionalPriceOverrides RegionalPriceOverride[]
 
   @@index([branchId, categoryId])
   @@index([branchId, isAvailable])
@@ -1890,18 +1892,22 @@ model Organization {
   createdAt             DateTime           @default(now()) @map("created_at")
   updatedAt             DateTime           @updatedAt @map("updated_at")
 
-  branches             Branch[]
-  regions              Region[]
-  franchises           Franchise[]
-  branchGroups         BranchGroup[]
-  memberships          OrganizationMembership[]
-  featureFlagOverrides FeatureFlagOverride[]
-  subscription         OrganizationSubscription?
-  globalConfigEntries  GlobalConfigEntry[]
-  ssoConnections       SsoConnection[]
-  scimTokens           ScimToken[]
-  ipAllowlistEntries   IpAllowlistEntry[]
-  enterpriseAuditLogs  EnterpriseAuditLog[]
+  branches                  Branch[]
+  regions                   Region[]
+  franchises                Franchise[]
+  branchGroups              BranchGroup[]
+  memberships               OrganizationMembership[]
+  featureFlagOverrides      FeatureFlagOverride[]
+  subscription              OrganizationSubscription?
+  globalConfigEntries       GlobalConfigEntry[]
+  ssoConnections            SsoConnection[]
+  scimTokens                ScimToken[]
+  ipAllowlistEntries        IpAllowlistEntry[]
+  enterpriseAuditLogs       EnterpriseAuditLog[]
+  exchangeRates             ExchangeRate[]
+  taxRules                  TaxRule[]
+  localPaymentMethodConfigs LocalPaymentMethodConfig[]
+  receiptTemplates          ReceiptTemplate[]
 
   @@map("organizations")
 }
@@ -1920,7 +1926,9 @@ model Region {
   createdAt      DateTime     @default(now()) @map("created_at")
   updatedAt      DateTime     @updatedAt @map("updated_at")
 
-  branches Branch[]
+  branches               Branch[]
+  taxRules               TaxRule[]
+  regionalPriceOverrides RegionalPriceOverride[]
 
   @@unique([organizationId, code])
   @@map("regions")
@@ -2240,4 +2248,125 @@ model EnterpriseAuditLog {
 
   @@index([organizationId, createdAt])
   @@map("enterprise_audit_logs")
+}
+
+// ---------------------------------------------------------------------------
+// Enterprise & Global Restaurant Platform (Phase 8 Part 3) — Global
+// Operations: currencies, exchange rates, a rule-based tax engine,
+// regional pricing overrides, per-country payment method enablement, and
+// country-specific receipt templates. See docs/ROADMAP.md's Phase 8
+// Part 3 scope notes — exchange rates are admin-maintained, not fetched
+// from a live FX feed, and the tax engine is a rate lookup table, not a
+// live tax-jurisdiction API integration (both consistent with this
+// platform's standing "no external service" default).
+// ---------------------------------------------------------------------------
+
+/// A supported currency (ISO 4217). Global, not org-scoped — currencies
+/// themselves aren't tenant data, only which one an org/region uses is.
+model Currency {
+  code          String   @id
+  name          String
+  symbol        String
+  decimalDigits Int      @default(2) @map("decimal_digits")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@map("currencies")
+}
+
+/// Admin-maintained currency conversion rates — see this section's
+/// docblock for why this is not a live FX feed integration.
+model ExchangeRate {
+  id                String       @id @default(uuid())
+  organizationId    String       @map("organization_id")
+  organization      Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  baseCurrencyCode  String       @map("base_currency_code")
+  quoteCurrencyCode String       @map("quote_currency_code")
+  rate              Decimal      @db.Decimal(18, 8)
+  asOf              DateTime     @map("as_of")
+  createdAt         DateTime     @default(now()) @map("created_at")
+
+  @@unique([organizationId, baseCurrencyCode, quoteCurrencyCode])
+  @@map("exchange_rates")
+}
+
+/// A rule-based tax rate lookup — `regionId`/`menuCategoryId` narrow a
+/// rule to a specific region or menu category; both null means "applies
+/// org-wide in this country by default." `isInclusive` matters because
+/// Ethiopia/EU-style VAT is normally already included in the menu price,
+/// while US-style sales tax is added at checkout — the tax engine needs
+/// to know which behavior a given rule expects.
+model TaxRule {
+  id             String        @id @default(uuid())
+  organizationId String        @map("organization_id")
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  countryCode    String        @map("country_code")
+  regionId       String?       @map("region_id")
+  region         Region?       @relation(fields: [regionId], references: [id], onDelete: Cascade)
+  menuCategoryId String?       @map("menu_category_id")
+  menuCategory   MenuCategory? @relation(fields: [menuCategoryId], references: [id], onDelete: Cascade)
+  name           String
+  ratePercent    Decimal       @map("rate_percent") @db.Decimal(6, 3)
+  isInclusive    Boolean       @default(true) @map("is_inclusive")
+  createdAt      DateTime      @default(now()) @map("created_at")
+  updatedAt      DateTime      @updatedAt @map("updated_at")
+
+  @@index([organizationId, countryCode])
+  @@map("tax_rules")
+}
+
+/// Overrides a MenuItem's base price for one region — e.g. a coastal
+/// region with higher import costs pricing the same drink higher than
+/// the org's default `MenuItem.basePrice`.
+model RegionalPriceOverride {
+  id         String   @id @default(uuid())
+  regionId   String   @map("region_id")
+  region     Region   @relation(fields: [regionId], references: [id], onDelete: Cascade)
+  menuItemId String   @map("menu_item_id")
+  menuItem   MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  priceMinor Int      @map("price_minor")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@unique([regionId, menuItemId])
+  @@map("regional_price_overrides")
+}
+
+/// Which of the existing `PaymentMethod` enum values (Telebirr, CBE Birr,
+/// HelloCash, Amole, Card, Cash) are offered in a given country — a
+/// registry over the existing `PaymentProvider` abstraction (Chapa/Cash),
+/// not a new provider implementation. Adding a genuinely new payment
+/// rail (e.g. M-Pesa) still requires a new `PaymentProvider`
+/// implementation Part 3 does not add.
+model LocalPaymentMethodConfig {
+  id             String        @id @default(uuid())
+  organizationId String        @map("organization_id")
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  countryCode    String        @map("country_code")
+  method         PaymentMethod
+  isEnabled      Boolean       @default(true) @map("is_enabled")
+  sortOrder      Int           @default(0) @map("sort_order")
+  createdAt      DateTime      @default(now()) @map("created_at")
+
+  @@unique([organizationId, countryCode, method])
+  @@map("local_payment_method_configs")
+}
+
+/// Country-specific receipt formatting — legal footer text, whether to
+/// show a tax breakdown line/VAT registration number, and a date format
+/// string `ReceiptService` uses when rendering an order's receipt.
+model ReceiptTemplate {
+  id               String       @id @default(uuid())
+  organizationId   String       @map("organization_id")
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  countryCode      String       @map("country_code")
+  legalFooterText  String?      @map("legal_footer_text")
+  showTaxBreakdown Boolean      @default(true) @map("show_tax_breakdown")
+  showVatNumber    Boolean      @default(false) @map("show_vat_number")
+  vatNumber        String?      @map("vat_number")
+  dateFormat       String       @default("YYYY-MM-DD HH:mm") @map("date_format")
+  createdAt        DateTime     @default(now()) @map("created_at")
+  updatedAt        DateTime     @updatedAt @map("updated_at")
+
+  @@unique([organizationId, countryCode])
+  @@map("receipt_templates")
 }
