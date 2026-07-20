@@ -224,5 +224,6 @@ import { EmbeddingBackfillWorker } from "./workers/embedding-backfill.worker";
     RetrainingService,
     RetrainingScheduler,
   ],
+  exports: [ForecastingFacadeService],
 })
 export class AiIntelligenceModule {}

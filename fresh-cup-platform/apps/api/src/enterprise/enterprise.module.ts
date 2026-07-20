@@ -1,5 +1,11 @@
 import { Module } from "@nestjs/common";
+import { AiIntelligenceModule } from "../intelligence/ai-intelligence.module";
 import { AuthModule } from "../modules/auth/auth.module";
+import { BenchmarkingService } from "./analytics/benchmarking.service";
+import { BiExportService } from "./analytics/bi-export.service";
+import { EnterpriseAnalyticsController } from "./analytics/enterprise-analytics.controller";
+import { EnterpriseAnalyticsService } from "./analytics/enterprise-analytics.service";
+import { ForecastAggregationService } from "./analytics/forecast-aggregation.service";
 import { EnterpriseAuditController } from "./audit/enterprise-audit.controller";
 import { EnterpriseAuditService } from "./audit/enterprise-audit.service";
 import { BranchGroupsController } from "./branch-groups/branch-groups.controller";
@@ -53,12 +59,18 @@ import { WebAuthnService } from "./webauthn/webauthn.service";
  * a hash-chained audit trail), and Phase 8 Part 3 — Global Operations
  * (multi-currency, rule-based tax engine, locale/timezone resolution,
  * regional pricing, local payment method registry, country-specific
- * receipt templates). See docs/ROADMAP.md's Phase 8 sections for the
- * scope decisions each piece documents in its own file.
+ * receipt templates), and Phase 8 Part 4 — Enterprise Analytics
+ * (corporate/franchise/cross-region rollups, branch benchmarking,
+ * executive scorecards, forecast aggregation, CSV BI exports — all
+ * built by aggregating existing Order data and existing Phase 11
+ * per-branch forecasts, never a separate query/model path). See
+ * docs/ROADMAP.md's Phase 8 sections for the scope decisions each piece
+ * documents in its own file.
  */
 @Module({
-  imports: [TenancyModule, IpAllowlistModule, AuthModule],
+  imports: [TenancyModule, IpAllowlistModule, AuthModule, AiIntelligenceModule],
   controllers: [
+    EnterpriseAnalyticsController,
     OrganizationsController,
     RegionsController,
     FranchisesController,
@@ -81,6 +93,10 @@ import { WebAuthnService } from "./webauthn/webauthn.service";
     ReceiptTemplateController,
   ],
   providers: [
+    EnterpriseAnalyticsService,
+    BenchmarkingService,
+    ForecastAggregationService,
+    BiExportService,
     OrgRolesGuard,
     ScimAuthGuard,
     OrganizationsService,
