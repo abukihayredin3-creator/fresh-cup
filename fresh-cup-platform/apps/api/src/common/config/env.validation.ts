@@ -245,6 +245,27 @@ export class EnvironmentVariables {
   @IsOptional()
   @IsBoolean()
   AI_FORECASTING_ENABLED: boolean = true;
+
+  // Off by default: SsoSamlProvider does not verify the SAML Response's
+  // XML-DSig signature (see its docblock) — this must be explicitly set
+  // to acknowledge that gap before SsoService will treat a SAML login as
+  // authenticated. A loud, environment-level gate, not a silent one.
+  @IsOptional()
+  @IsBoolean()
+  ENTERPRISE_SSO_SAML_ALLOW_UNVERIFIED: boolean = false;
+
+  // The WebAuthn Relying Party ID (e.g. "admin.freshcup.example.com") —
+  // required for a WebAuthn registration/assertion to be attempted at
+  // all, since it's what every credential's rpIdHash is checked against.
+  @IsOptional()
+  @IsString()
+  ENTERPRISE_WEBAUTHN_RP_ID?: string;
+
+  // Defaults to `https://${ENTERPRISE_WEBAUTHN_RP_ID}` when unset — override
+  // for local development against http://localhost.
+  @IsOptional()
+  @IsString()
+  ENTERPRISE_WEBAUTHN_ORIGIN?: string;
 }
 
 /**
@@ -260,6 +281,7 @@ const BOOLEAN_ENV_KEYS = [
   "AI_EXECUTIVE_ENABLED",
   "AI_MARKETING_ENABLED",
   "AI_FORECASTING_ENABLED",
+  "ENTERPRISE_SSO_SAML_ALLOW_UNVERIFIED",
 ] as const;
 
 function normalizeBooleanEnvVars(config: Record<string, unknown>): Record<string, unknown> {

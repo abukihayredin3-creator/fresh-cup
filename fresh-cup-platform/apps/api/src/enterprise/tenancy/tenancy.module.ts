@@ -1,4 +1,5 @@
 import { Module } from "@nestjs/common";
+import { IpAllowlistModule } from "../ip-allowlist/ip-allowlist.module";
 import { TenantContextGuard } from "./tenant-context.guard";
 import { TenantContextService } from "./tenant-context.service";
 
@@ -9,6 +10,7 @@ import { TenantContextService } from "./tenant-context.service";
  * on create) can import just this rather than the full EnterpriseModule.
  */
 @Module({
+  imports: [IpAllowlistModule],
   providers: [TenantContextService, TenantContextGuard],
   exports: [TenantContextService, TenantContextGuard],
 })

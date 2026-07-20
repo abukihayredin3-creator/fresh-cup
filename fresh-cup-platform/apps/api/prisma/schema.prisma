@@ -399,6 +399,8 @@ model User {
   aiRecommendationsDecided AiRecommendationOutcome[] @relation("AiRecommendationDecider")
   organizationMemberships  OrganizationMembership[]
   franchisesOwned          Franchise[]               @relation("FranchiseOwner")
+  webAuthnCredentials      WebAuthnCredential[]
+  trustedDevices           TrustedDevice[]
 
   @@index([branchId])
   @@index([departmentId])
@@ -1896,6 +1898,10 @@ model Organization {
   featureFlagOverrides FeatureFlagOverride[]
   subscription         OrganizationSubscription?
   globalConfigEntries  GlobalConfigEntry[]
+  ssoConnections       SsoConnection[]
+  scimTokens           ScimToken[]
+  ipAllowlistEntries   IpAllowlistEntry[]
+  enterpriseAuditLogs  EnterpriseAuditLog[]
 
   @@map("organizations")
 }
@@ -2081,4 +2087,157 @@ model GlobalConfigEntry {
 
   @@unique([organizationId, key])
   @@map("global_config_entries")
+}
+
+// ---------------------------------------------------------------------------
+// Enterprise & Global Restaurant Platform (Phase 8 Part 2) — Enterprise
+// Security: SSO (OIDC-based Google Workspace/Entra ID/Okta + SAML 2.0),
+// SCIM provisioning, WebAuthn hardware security keys, IP allowlisting,
+// device trust, and a hash-chained enterprise audit trail. See
+// docs/ROADMAP.md's Phase 8 Part 2 scope notes for the security-boundary
+// decisions this section documents (SAML signature verification and full
+// WebAuthn attestation both require a dedicated, security-reviewed
+// library this phase does not add).
+// ---------------------------------------------------------------------------
+
+enum SsoProviderType {
+  GOOGLE_WORKSPACE
+  MICROSOFT_ENTRA_ID
+  OKTA
+  GENERIC_OIDC
+  SAML
+}
+
+/// An org's configured identity provider. `config` holds non-secret
+/// values only (issuer/authorization/token/JWKS endpoints, client id,
+/// SAML entity id/ACS URL/IdP SSO URL) — the client secret is never
+/// stored here; `clientSecretEnvVar` names the environment variable
+/// `SsoOidcProvider` reads it from at request time, the same
+/// env-var-indirection pattern `LlmProvider` factories use for API keys.
+model SsoConnection {
+  id                 String          @id @default(uuid())
+  organizationId     String          @map("organization_id")
+  organization       Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  provider           SsoProviderType
+  name               String
+  domainHint         String?         @map("domain_hint")
+  config             Json
+  clientSecretEnvVar String?         @map("client_secret_env_var")
+  isEnabled          Boolean         @default(true) @map("is_enabled")
+  createdAt          DateTime        @default(now()) @map("created_at")
+  updatedAt          DateTime        @updatedAt @map("updated_at")
+
+  @@index([organizationId])
+  @@map("sso_connections")
+}
+
+/// A SCIM 2.0 bearer token for automated user provisioning from an IdP.
+/// `tokenHash` only — the raw token is shown once at creation and never
+/// stored or returned again, same convention as RefreshToken.
+model ScimToken {
+  id             String       @id @default(uuid())
+  organizationId String       @map("organization_id")
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name           String
+  tokenHash      String       @unique @map("token_hash")
+  lastUsedAt     DateTime?    @map("last_used_at")
+  revokedAt      DateTime?    @map("revoked_at")
+  createdAt      DateTime     @default(now()) @map("created_at")
+
+  @@index([organizationId])
+  @@map("scim_tokens")
+}
+
+/// A registered WebAuthn hardware security key. `publicKeyCose` is the
+/// raw COSE_Key bytes from registration (base64); `signCount` is the
+/// authenticator's signature counter, checked on every assertion to
+/// detect cloned authenticators (must strictly increase).
+model WebAuthnCredential {
+  id            String    @id @default(uuid())
+  userId        String    @map("user_id")
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  credentialId  String    @unique @map("credential_id")
+  publicKeyCose String    @map("public_key_cose")
+  signCount     Int       @default(0) @map("sign_count")
+  deviceName    String?   @map("device_name")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  lastUsedAt    DateTime? @map("last_used_at")
+
+  @@index([userId])
+  @@map("webauthn_credentials")
+}
+
+/// A one-time WebAuthn registration/assertion challenge, consumed
+/// (deleted) on use. Short-lived — `expiresAt` is enforced by the
+/// service, not a DB TTL, since Postgres has no native row expiry.
+model WebAuthnChallenge {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  challenge String
+  purpose   String
+  createdAt DateTime @default(now()) @map("created_at")
+  expiresAt DateTime @map("expires_at")
+
+  @@index([userId, purpose])
+  @@map("webauthn_challenges")
+}
+
+/// An organization-level allowed network range. `cidr` is validated
+/// (IPv4/IPv6 CIDR notation) by the DTO before it ever reaches this
+/// table. An organization with zero entries has no IP restriction —
+/// allowlisting is opt-in per org, not a default-deny posture nobody
+/// asked for.
+model IpAllowlistEntry {
+  id             String       @id @default(uuid())
+  organizationId String       @map("organization_id")
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  cidr           String
+  description    String?
+  createdAt      DateTime     @default(now()) @map("created_at")
+
+  @@unique([organizationId, cidr])
+  @@map("ip_allowlist_entries")
+}
+
+/// A device a user has explicitly trusted (e.g. "remember this device for
+/// 30 days" after MFA) — `fingerprintHash` is a hash of a client-supplied
+/// device fingerprint, never the raw fingerprint. Distinct from
+/// RefreshToken: a trusted device can outlive any single refresh token
+/// and is checked as an additional MFA-bypass signal, not an auth token
+/// itself.
+model TrustedDevice {
+  id              String    @id @default(uuid())
+  userId          String    @map("user_id")
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fingerprintHash String    @map("fingerprint_hash")
+  deviceName      String?   @map("device_name")
+  trustedAt       DateTime  @default(now()) @map("trusted_at")
+  lastSeenAt      DateTime  @default(now()) @map("last_seen_at")
+  expiresAt       DateTime  @map("expires_at")
+  revokedAt       DateTime? @map("revoked_at")
+
+  @@unique([userId, fingerprintHash])
+  @@map("trusted_devices")
+}
+
+/// A hash-chained, append-only security audit trail — distinct from
+/// Phase 3's general `AuditLog` (which captures admin CRUD mutations
+/// across every module). This one is scoped to enterprise security
+/// events (SSO login, SCIM provisioning, WebAuthn registration, IP
+/// allowlist changes, trusted-device changes) and each row's `hash`
+/// commits to `previousHash`, so any row tampered with or deleted breaks
+/// the chain from that point forward — detectable, not just logged.
+model EnterpriseAuditLog {
+  id             String       @id @default(uuid())
+  organizationId String       @map("organization_id")
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  actorUserId    String?      @map("actor_user_id")
+  eventType      String       @map("event_type")
+  detail         Json
+  previousHash   String?      @map("previous_hash")
+  hash           String
+  createdAt      DateTime     @default(now()) @map("created_at")
+
+  @@index([organizationId, createdAt])
+  @@map("enterprise_audit_logs")
 }
