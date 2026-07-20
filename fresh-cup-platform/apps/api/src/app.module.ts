@@ -14,6 +14,7 @@ import { PrismaModule } from "./database/prisma.module";
 import { EnterpriseModule } from "./enterprise/enterprise.module";
 import { AiIntelligenceModule } from "./intelligence/ai-intelligence.module";
 import { AddressesModule } from "./modules/addresses/addresses.module";
+import { AiBrainModule } from "./modules/ai-brain/ai-brain.module";
 import { AnalyticsModule } from "./modules/analytics/analytics.module";
 import { AuditModule } from "./modules/audit/audit.module";
 import { AuthModule } from "./modules/auth/auth.module";
@@ -61,6 +62,7 @@ import { WebsocketsModule } from "./websockets/websockets.module";
     AuthModule,
     UsersModule,
     AddressesModule,
+    AiBrainModule,
     BranchesModule,
     CatalogModule,
     InventoryModule,

@@ -754,6 +754,25 @@ same precedent as branch-scoped access.
 existing `GET /health`/`GET /health/ready` are excluded from the
 `/api/v1` prefix, same as before — see `ARCHITECTURE.md` §13.
 
+## AI Restaurant Operating System (Phase 13 Task 1)
+
+Every route below lives under `/ai-brain/*`. All are behind
+`TenantContextGuard` (resolves `organizationId` from the caller's branch,
+never from client input — see `ARCHITECTURE.md` §6f) and
+`@Roles(MANAGER, ADMIN)`; a `branchId` passed in a request body is
+additionally verified to belong to the resolved organization before use.
+Mutating endpoints are `@Auditable`, same `AuditLogInterceptor` convention
+as every other admin-facing controller.
+
+| Method | Path                  | Notes                                                                                                                                                                                        |
+| ------ | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/ai-brain/status`    | org-scoped overview: insight/memory/recommendation/decision counts, active `PredictionProvider` name                                                                                         |
+| GET    | `/ai-brain/memory`    | `?branchId=&memoryType=&minImportance=&cursor=&limit=` — cursor-paginated `AiMemory` recall, ordered by importance then recency                                                              |
+| POST   | `/ai-brain/analyze`   | body `{ category: "sales"\|"inventory"\|"customer"\|"operational", branchId? }` — runs the Reasoning Engine, persists and returns an `AiInsight`                                             |
+| POST   | `/ai-brain/recommend` | body `{ branchId?, categories?[] }` — re-runs reasoning for each category (default: all four) and returns the resulting ranked `AiRecommendation[]` (empty array if nothing anomalous)       |
+| POST   | `/ai-brain/decision`  | body `{ branchId? }` — combines a fresh sales forecast, the sales reasoning baseline, and every current recommendation into a priority-sorted `AiDecision[]`                                 |
+| POST   | `/ai-brain/learning`  | body `{ recommendationId, result, feedback }` — records an `AiLearningEvent`; a `result` of `accepted`/`rejected`/`implemented` (case-insensitive) also advances the recommendation's status |
+
 ## Audit logs (Phase 3)
 
 An `@Auditable(entityType)` decorator + a global interceptor write one

@@ -927,6 +927,95 @@ eight new Enterprise routes.
   Kubernetes + blue/green/canary + CI/CD + disaster-recovery pipeline —
   all without touching any existing Phase 1–11 endpoint or table.
 
+## Phase 13 — AI Restaurant Operating System ✅ (Task 1)
+
+Numbered 13 (not 9) deliberately — "Phase 9 — Scale & hardening" above is a
+distinct, still-unbuilt future phase (load testing, read replicas,
+partitioning) that this phase does not touch or supersede. This phase was
+scoped and built under the working name "Phase 9" in its own planning
+session, same as Phase 12 was originally scoped as "Phase 8" before Phases
+7–10; see Sequencing notes below for why it jumped the queue. This is Task
+1 of a larger, still-open Phase 13 plan — later tasks are expected to add
+real LLM/ML/agent capability behind the interfaces this task establishes.
+
+### Task 1: AI Restaurant Brain Core
+
+- New `apps/api/src/modules/ai-brain/` — a self-contained, org/branch-scoped
+  memory -> reasoning -> prediction -> recommendation -> decision ->
+  learning loop, deliberately separate from the existing intelligence trees
+  (Phase 6's `modules/intelligence`, Phase 11 Parts 1–3's `intelligence/`,
+  Phase 12 Part 4's `enterprise/analytics`) — those are untouched; this is a
+  simpler, deliberately rule-based/statistical foundation, not a
+  replacement
+- New models: `AiInsight`, `AiMemory`, `AiRecommendation`, `AiDecision`,
+  `AiLearningEvent` (+ `AiInsightType`/`AiRecommendationStatus`/`AiPriority`
+  enums) — named with the codebase's established `Ai` prefix (matching
+  Phase 11's `AiMemoryEntry`/`AiApprovalRequest`) rather than the literal
+  `AI` casing from planning; `AiMemory` and `AiLearningEvent` are
+  deliberately distinct from Phase 11's `AiMemoryEntry` (RAG-backed
+  conversational memory) and `AiRecommendationOutcome` (the intelligence/
+  tree's own outcome tracking) — same concept, different, non-overlapping
+  data
+- **Memory Engine** (`MemoryEngineService`): stores/retrieves business
+  events and AI observations, org-scoped with optional branch scope, ranked
+  by importance
+- **Reasoning Engine** (`ReasoningEngineService`): analyzes real
+  sales/inventory/customer/operational data into `{problem, causes[],
+confidence, evidence[]}` — trailing-window revenue/order-count
+  comparisons, low-stock counts against `InventoryItem.reorderThreshold`,
+  distinct-customer/repeat-rate trends, and recall of the Memory Engine's
+  own high-importance entries; every cause is computed from live Prisma
+  aggregates, never hardcoded (see "AI design principles" below). Genuine
+  anomalies get written back to the Memory Engine, closing the loop
+- **Prediction Engine** (`PredictionEngineService` implementing
+  `PredictionProvider`): trailing-average + linear-trend forecasting over
+  real `Order`/`InventoryTransaction` data for sales, inventory demand, and
+  customer demand — the same provider-interface-plus-swappable-
+  implementation pattern as Phase 11 Part 1's `LlmProvider`, so a real ML
+  model can replace it later without any caller changing
+- **Recommendation Engine** (`RecommendationEngineService`): turns the
+  Reasoning Engine's structured `signals` (not its prose `causes`, so a
+  wording change can't silently break this) into ranked, explainable
+  recommendations with title/impact/confidence/priority
+- **Decision Engine** (`DecisionEngineService`): combines the Prediction
+  Engine's next-day sales forecast with the Reasoning Engine's
+  trailing-week baseline to flag genuine demand swings, folds in every
+  ranked recommendation, and persists the combined, priority-sorted list as
+  executive actions
+- **Learning Engine** (`LearningEngineService`): records the outcome of a
+  recommendation and advances its status (`PENDING` ->
+  `ACCEPTED`/`REJECTED`/`IMPLEMENTED`) when the feedback names one — the
+  feedback loop future ML/agent engines will train against
+- `GET /ai-brain/status`, `GET /ai-brain/memory`, `POST /ai-brain/analyze`,
+  `POST /ai-brain/recommend`, `POST /ai-brain/decision`,
+  `POST /ai-brain/learning` — all behind `TenantContextGuard` (never a
+  client-supplied organization id) and `@Roles(MANAGER, ADMIN)`; mutating
+  endpoints are `@Auditable`
+- **AI design principles:** Task 1 is rule-based intelligence and
+  structured reasoning, not a trained model wearing an AI label — every
+  number in a cause, recommendation, or decision comes from a real Prisma
+  aggregate over this organization's own history. The Prediction Engine's
+  provider-interface split is what leaves room for a real LLM/ML/agent
+  phase later without rewriting the Reasoning/Recommendation/Decision
+  engines that consume it
+- **Exit criteria (Task 1):** an organization's own sales/inventory/customer
+  data drives a real reasoning trace, a real forecast, and a ranked
+  recommendation/decision list, end to end, with tenant isolation enforced
+  at both the request-branch level (`AiBrainTenantScopeService` verifies a
+  supplied `branchId` belongs to the caller's organization) and the query
+  level (every read/write is scoped by `organizationId`)
+
+46 new unit tests (memory/prediction/reasoning/recommendation/decision/
+learning engines, the trend-statistics utility, and the status aggregator)
+plus 8 e2e tests (tenant isolation across `x-organization-id` overrides,
+cross-org branch/recommendation ids, and role gating) — bringing the API
+suite to 764 unit + 146 e2e tests; typecheck/lint clean, a full Nest app
+boot verifying the new module resolves in the DI graph (which caught a
+real bug: `TenantContextGuard`'s `IpAllowlistService` dependency needs
+`IpAllowlistModule` imported directly alongside `TenancyModule`, not just
+transitively — the same class of DI-graph gap Phase 12's boot test caught
+for `IpAllowlistModule` itself).
+
 ## Sequencing notes
 
 - Auth and RBAC came first (Phase 1) because every other phase's endpoints
@@ -1001,3 +1090,12 @@ eight new Enterprise routes.
   cohort retention analysis remain open; Phase 12 Part 4's rollups are
   on-demand `groupBy` queries, the same "no materialized views" posture
   every prior analytics phase has kept) or any of Phases 7/9/10.
+- Phase 13 (AI Restaurant Operating System) is numbered after Phase 12 for
+  the same reason Phase 12 jumped Phases 7–10: it was scoped and built as
+  its own self-contained unit with no dependency on the still-open Phases
+  7/9/10, and waiting for those to land first would have gained nothing.
+  Task 1 deliberately sits beside the existing intelligence trees (Phase 6,
+  Phase 11 Parts 1–3, Phase 12 Part 4) rather than replacing any of them —
+  a new, simpler rule-based loop that later Phase 13 tasks can graft real
+  LLM/ML/agent capability onto, without any of the earlier intelligence
+  work needing to move.

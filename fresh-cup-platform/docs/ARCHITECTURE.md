@@ -150,6 +150,7 @@ module (e.g., Notifications) becomes a bottleneck.
 - **Audit** — a cross-cutting interceptor logging every admin mutation (actor, action, entity, after-state), not a bounded context of its own
 - **Branches** — restaurant locations (one today, extensible)
 - **Enterprise & Global Restaurant Platform** (Phase 12, `apps/api/src/enterprise`) — a new tenant root (`Organization`) sitting ABOVE `Branch`, multi-tenant RBAC, SSO/SCIM/WebAuthn, multi-currency/tax/localization, and cross-branch analytics — see §6e
+- **AI Restaurant Operating System** (Phase 13 Task 1, `apps/api/src/modules/ai-brain`) — a rule-based memory → reasoning → prediction → recommendation → decision → learning loop, org/branch-scoped via §6e's tenancy guard, deliberately separate from every other intelligence tree above — see §6f
 
 Modules communicate in-process via an internal event bus (Nest
 `EventEmitter`) for cross-cutting concerns — e.g., `order.paid` triggers
@@ -469,6 +470,55 @@ aggregation are all built by `groupBy`-aggregating the existing `Order`
 table (same `PAID_STATUSES` convention as the Phase 3 Analytics module)
 and summing §6c's existing per-branch forecasts — a genuinely new
 cross-branch capability, but no new query path or materialized view.
+
+### 6f. AI Restaurant Operating System (Phase 13 Task 1)
+
+A new `apps/api/src/modules/ai-brain/` tree — a self-contained,
+org/branch-scoped memory → reasoning → prediction → recommendation →
+decision → learning loop, deliberately separate from every existing
+intelligence tree (§6a's `modules/intelligence`, §6b–6d's `intelligence/`,
+§6e's `enterprise/analytics`). Those keep doing what they already do; this
+is a simpler, rule-based/statistical foundation later phases plug real
+LLM/ML/agent capability into, not a rewrite of what §6a–6e already built.
+
+**The loop.** `MemoryEngineService` stores and recalls business events and
+AI observations (`AiMemory`), ranked by an importance score.
+`ReasoningEngineService` turns real Prisma aggregates — trailing-window
+revenue/order-count comparisons, `InventoryItem.reorderThreshold`
+breaches, distinct-customer/repeat-rate trends, and the Memory Engine's own
+high-importance recall — into a structured `{problem, causes[], confidence,
+evidence[]}` trace (`AiInsight`), and writes genuine anomalies back into
+memory, closing the loop. `PredictionEngineService` implements a
+`PredictionProvider` interface with trailing-average + linear-trend
+forecasting over `Order`/`InventoryTransaction` history — the same
+provider-interface-plus-swappable-implementation shape as §6b's
+`LlmProvider`, so a real ML model can replace it later without any caller
+changing. `RecommendationEngineService` reads the Reasoning Engine's
+structured `signals` (never its prose `causes`, so a wording change can't
+silently break recommendation generation) into ranked, explainable
+`AiRecommendation` rows. `DecisionEngineService` combines the Prediction
+Engine's forecast with the Reasoning Engine's baseline to flag genuine
+demand swings, folds in every ranked recommendation, and persists the
+combined, priority-sorted list as `AiDecision` executive actions.
+`LearningEngineService` records what happened to a recommendation
+(`AiLearningEvent`) and advances its status when the feedback names a
+lifecycle transition — the loop later ML/agent engines will train against.
+
+**Tenant isolation.** `AiBrainModule` imports §6e's `TenancyModule` (and
+`IpAllowlistModule` directly, since `TenantContextGuard` depends on
+`IpAllowlistService`) rather than building its own — the same cross-tree
+reuse pattern `BranchesModule` established for `TenantContextService`
+alone. Every handler resolves `organizationId` from `TenantContextGuard`,
+never from client input; a request-supplied `branchId` is additionally
+verified against the resolved organization by `AiBrainTenantScopeService`
+before it's ever used in a query.
+
+**Naming.** New models use the codebase's established `Ai` prefix
+(matching §6b's `AiMemoryEntry`/`AiApprovalRequest`) rather than the
+literal `AI` casing from planning. `AiMemory` and `AiLearningEvent` are
+deliberately distinct from §6b's `AiMemoryEntry` (RAG-backed conversational
+memory) and `AiRecommendationOutcome` (that tree's own outcome tracking) —
+same concept, non-overlapping data, no shared table.
 
 ## 7. API architecture
 

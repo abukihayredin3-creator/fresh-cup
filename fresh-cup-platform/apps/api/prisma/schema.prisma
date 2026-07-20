@@ -326,6 +326,9 @@ model Branch {
   aiApprovalRequests     AiApprovalRequest[]
   branchGroupMemberships BranchGroupMembership[]
   featureFlagOverrides   FeatureFlagOverride[]
+  aiInsights             AiInsight[]
+  aiMemories             AiMemory[]
+  aiRecommendations      AiRecommendation[]
 
   @@index([managerId])
   @@index([organizationId])
@@ -1908,6 +1911,10 @@ model Organization {
   taxRules                  TaxRule[]
   localPaymentMethodConfigs LocalPaymentMethodConfig[]
   receiptTemplates          ReceiptTemplate[]
+  aiInsights                AiInsight[]
+  aiMemories                AiMemory[]
+  aiRecommendations         AiRecommendation[]
+  aiDecisions               AiDecision[]
 
   @@map("organizations")
 }
@@ -2369,4 +2376,157 @@ model ReceiptTemplate {
 
   @@unique([organizationId, countryCode])
   @@map("receipt_templates")
+}
+
+// ============================================================
+// Phase 9 Task 1 — AI Restaurant Brain Core
+// ============================================================
+// A new, self-contained AI foundation under apps/api/src/modules/ai-brain/
+// — not a replacement for the existing intelligence trees
+// (modules/intelligence from Phase 6, intelligence/ from Phase 7/11,
+// enterprise/analytics from Phase 8 Part 4). Those are untouched and keep
+// doing what they already do. This is a simpler, org/branch-scoped
+// memory -> reasoning -> recommendation -> decision -> learning loop that
+// is deliberately rule-based and statistical in this phase (see
+// ROADMAP.md's Phase 9 "AI design principles" note) — the foundation
+// later phases plug real LLM/ML/agent capability into, not a rewrite of
+// what Phases 6/7/11 already built.
+
+/// What kind of analysis produced an AiInsight — see ReasoningEngineService.
+enum AiInsightType {
+  REASONING
+  PATTERN
+  ANOMALY
+  OBSERVATION
+}
+
+/// Lifecycle of an AiRecommendation as the Learning Engine's feedback
+/// loop moves it forward — mirrors the accepted/rejected/pending shape
+/// already established by Phase 11 Part 3's RecommendationOutcomeStatus,
+/// kept as its own enum since this is a distinct model.
+enum AiRecommendationStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  IMPLEMENTED
+}
+
+/// Shared priority scale for recommendations and decisions.
+enum AiPriority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+/// Reasoning Engine output — a structured analysis of a business
+/// situation (problem/causes/confidence/evidence), see
+/// ReasoningEngineService. `content` carries the full structured
+/// reasoning trace; `category`/`type`/`confidence` are pulled out as real
+/// columns so insights are queryable/filterable without unpacking JSON.
+model AiInsight {
+  id             String        @id @default(uuid())
+  organizationId String        @map("organization_id")
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  branchId       String?       @map("branch_id")
+  branch         Branch?       @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  type           AiInsightType @default(REASONING)
+  category       String
+  content        Json
+  confidence     Float
+  createdAt      DateTime      @default(now()) @map("created_at")
+
+  @@index([organizationId, branchId, createdAt])
+  @@index([organizationId, category])
+  @@map("ai_insights")
+}
+
+/// Memory Engine storage — long-term restaurant intelligence memory:
+/// business events and AI observations, retrievable by importance and
+/// scoped per organization (and optionally per branch). Distinct from
+/// Phase 7's `AiMemoryEntry` (that one is the intelligence/ tree's
+/// domain-categorized conversational/decision memory feeding RAG
+/// retrieval) — this is the AI Brain's own simpler event log, with no
+/// vector-embedding dependency.
+model AiMemory {
+  id             String       @id @default(uuid())
+  organizationId String       @map("organization_id")
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  branchId       String?      @map("branch_id")
+  branch         Branch?      @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  memoryType     String       @map("memory_type")
+  data           Json
+  importance     Float        @default(0.5)
+  createdAt      DateTime     @default(now()) @map("created_at")
+
+  @@index([organizationId, branchId, importance])
+  @@index([organizationId, memoryType])
+  @@map("ai_memories")
+}
+
+/// Recommendation Engine output — a ranked, explainable, actionable
+/// suggestion. `priority` is additive beyond the Phase 9 spec's literal
+/// DB field list: the functional spec requires every recommendation to
+/// carry a priority, so it earns a real, indexable column instead of
+/// being buried in an unindexed JSON blob.
+model AiRecommendation {
+  id             String                 @id @default(uuid())
+  organizationId String                 @map("organization_id")
+  organization   Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  branchId       String?                @map("branch_id")
+  branch         Branch?                @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  title          String
+  description    String
+  impact         String
+  confidence     Float
+  priority       AiPriority             @default(MEDIUM)
+  status         AiRecommendationStatus @default(PENDING)
+  createdAt      DateTime               @default(now()) @map("created_at")
+  updatedAt      DateTime               @updatedAt @map("updated_at")
+
+  learningEvents AiLearningEvent[]
+
+  @@index([organizationId, branchId, status])
+  @@index([organizationId, priority])
+  @@map("ai_recommendations")
+}
+
+/// Decision Engine output — the central AI decision layer's ranked
+/// executive action, combining Prediction Engine forecasts + Reasoning
+/// Engine analysis + Recommendation Engine output into one decision.
+/// `input`/`output` capture the full combined trace; `priority` is
+/// pulled out as a real column for the same reason as
+/// `AiRecommendation.priority` above.
+model AiDecision {
+  id             String       @id @default(uuid())
+  organizationId String       @map("organization_id")
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  decisionType   String       @map("decision_type")
+  priority       AiPriority   @default(MEDIUM)
+  input          Json
+  output         Json
+  confidence     Float
+  createdAt      DateTime     @default(now()) @map("created_at")
+
+  @@index([organizationId, createdAt])
+  @@index([organizationId, priority])
+  @@map("ai_decisions")
+}
+
+/// Learning Engine feedback loop — whether a recommendation was
+/// accepted/rejected and what actually happened, closing the loop future
+/// ML/agent engines will train against. Distinct from Phase 11 Part 3's
+/// `AiRecommendationOutcome` (that one tracks outcomes for the
+/// intelligence/ tree's own recommendation stream) — this is the AI
+/// Brain's own feedback record, tied to `AiRecommendation` above.
+model AiLearningEvent {
+  id               String           @id @default(uuid())
+  recommendationId String           @map("recommendation_id")
+  recommendation   AiRecommendation @relation(fields: [recommendationId], references: [id], onDelete: Cascade)
+  result           String
+  feedback         Json
+  createdAt        DateTime         @default(now()) @map("created_at")
+
+  @@index([recommendationId])
+  @@map("ai_learning_events")
 }
