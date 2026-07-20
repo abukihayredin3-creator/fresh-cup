@@ -807,3 +807,68 @@ overview — `apps/api/prisma/schema.prisma` (plus its generated
 `prisma/migrations/`) is the actual source of truth for every table,
 constraint, and index; consult it, not this file, for exact types and
 `onDelete` behavior.
+
+## 21. Enterprise & Global Restaurant Platform (Phase 12)
+
+A new tenant root ABOVE every table above, not a retrofit of them:
+`organizations` sits above `branches`, which gains a required
+(non-nullable) `organization_id` FK — the migration hand-sequences a
+backfill (create one default org, assign every pre-existing branch to
+it, add the NOT NULL constraint) rather than the auto-generated skeleton
+Prisma would otherwise produce, since that skeleton can't express a
+backfill for a required column on a non-empty table. Nothing above this
+section changes shape or gains a required column.
+
+### Foundation (Part 1)
+
+| Table                                                | Purpose                                                                                                                                                                                                                |
+| ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `organizations`                                      | Tenant root — name, slug, domain, status, timezone, default locale, default currency code                                                                                                                              |
+| `regions`                                            | Org-scoped geographic grouping — name, code, country_code, timezone                                                                                                                                                    |
+| `franchises`                                         | Org-scoped ownership grouping — name, owner_user_id FK NULL                                                                                                                                                            |
+| `branch_groups`, `branch_group_memberships`          | Arbitrary many-to-many branch grouping (not region/franchise-shaped)                                                                                                                                                   |
+| `organization_memberships`                           | The `OrgRole` axis (`org_owner`,`org_admin`,`franchise_admin`,`region_manager`) for branch-less org-level users — additive to, not a replacement of, the existing branch-scoped `UserRole`                             |
+| `feature_flag_definitions`, `feature_flag_overrides` | Global flag registry + per-org (optionally per-branch) override, with an optional `rollout_percentage` evaluated via the same FNV-1a hash utility Phase 11 Part 2 built for dataset hashing — deterministic per entity |
+| `subscription_plans`, `organization_subscriptions`   | Licensing — plan features as a JSON array, one active subscription per org                                                                                                                                             |
+| `global_config_entries`                              | Org-scoped arbitrary key/value config, JSON value                                                                                                                                                                      |
+
+`branches` gains `organization_id` (required), `region_id`/`franchise_id`
+(optional). Every table above scopes by `organization_id`, cascading on
+org delete.
+
+### Security (Part 2)
+
+| Table                                         | Purpose                                                                                                                                                                |
+| --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sso_connections`                             | Org-scoped SSO config — provider (`google_workspace`,`microsoft_entra_id`,`okta`,`saml`), non-secret `config` jsonb, `client_secret_env_var` (never the secret itself) |
+| `scim_tokens`                                 | Hashed bearer tokens for SCIM 2.0 provisioning                                                                                                                         |
+| `webauthn_credentials`, `webauthn_challenges` | Hardware security key public keys (COSE, base64) + signCount for clone detection; short-lived challenges                                                               |
+| `ip_allowlist_entries`                        | Org-scoped CIDR entries — zero entries means unrestricted                                                                                                              |
+| `trusted_devices`                             | `fingerprint_hash` only ever stores a SHA-256 hash, never the raw client fingerprint                                                                                   |
+| `enterprise_audit_logs`                       | Hash-chained (`hash` covers the previous row's `hash`) — tamper-evident, distinct from the general-purpose `audit_logs` from section 13                                |
+
+### Global Operations (Part 3)
+
+| Table                          | Purpose                                                                                                                                                                            |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `currencies`                   | Global (not org-scoped) ISO 4217 registry                                                                                                                                          |
+| `exchange_rates`               | Org-scoped, admin-maintained — explicitly not a live FX-feed integration                                                                                                           |
+| `tax_rules`                    | Org-scoped rule lookup by country/region/menu-category, `is_inclusive` distinguishing VAT-included-in-price vs. tax-added-at-checkout — explicitly not a live tax-jurisdiction API |
+| `regional_price_overrides`     | Overrides `menu_items.base_price` per region                                                                                                                                       |
+| `local_payment_method_configs` | Per-country registry over the _existing_ `PaymentMethod` enum (`telebirr`,`cbe_birr`,`hellocash`,`amole`,`card`,`cash`) — not a new payment-provider implementation                |
+| `receipt_templates`            | Per-country receipt formatting (legal footer, tax-breakdown visibility, VAT number, date format), unique per (org, country)                                                        |
+
+### Analytics (Part 4)
+
+No new tables — corporate/franchise/region/branch-group rollups,
+benchmarking, the executive scorecard, and forecast aggregation are all
+computed on demand from the existing `orders` table (`groupBy` on
+`branch_id`, same `PAID_STATUSES` convention as section 18) and Phase 11
+Part 2's existing per-branch forecasts. Same "no materialized views
+ahead of need" posture as every prior analytics phase.
+
+### Reliability & Infrastructure (Part 5)
+
+No new tables — this part is Kubernetes manifests, a CI/CD pipeline, and
+backup/restore scripts (`infra/`), not application schema. See
+`DEPLOYMENT.md`.

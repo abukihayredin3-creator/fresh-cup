@@ -700,6 +700,233 @@ marketing,workforce,memory,assistant}` routes, all untouched — Part 2's
   suite — Phases 1–6 and Phase 11 Parts 1–2 included — still passes
   untouched.
 
+## Phase 12 — Enterprise & Global Restaurant Platform ✅
+
+Numbered 12 (not 8) deliberately — "Phase 8 — Analytics at scale" above is
+a distinct, still-unbuilt future phase (materialized aggregation views,
+cohort retention) that this phase does not touch or supersede. This phase
+was built under the working name "Phase 8" in its own planning session,
+same as Phase 11 was originally scoped before Phases 7–10; see
+Sequencing notes below for why it jumped the queue.
+
+### Part 1: Enterprise Foundation
+
+- New `apps/api/src/enterprise/` — a sibling tree to `modules/` and
+  `intelligence/`, additive rather than a retrofit: `Organization` sits
+  above the existing `Branch` model as the tenant root. `Branch.organizationId`
+  is a required (non-nullable) FK — the migration hand-sequences a
+  backfill (create a default org, assign every pre-existing branch to
+  it, then add the NOT NULL constraint) so tenant scoping is real from
+  row one, not an opt-in nullable column
+- New models: `Organization`, `Region`, `Franchise`, `BranchGroup` +
+  `BranchGroupMembership`, `OrganizationMembership` (a second,
+  additive `OrgRole` axis — `ORG_OWNER`/`ORG_ADMIN`/`FRANCHISE_ADMIN`/
+  `REGION_MANAGER` — layered on top of the existing branch-scoped
+  `UserRole`, not a replacement), `FeatureFlagDefinition` +
+  `FeatureFlagOverride` (percentage rollout via the same FNV-1a hash
+  utility Phase 11 Part 2 built for dataset hashing — deterministic per
+  entity, not randomized per request), `SubscriptionPlan` +
+  `OrganizationSubscription`, `GlobalConfigEntry`
+- `TenantContextService`/`TenantContextGuard` resolve `organizationId`
+  from the caller's branch (the common case) or `OrganizationMembership`
+  for branch-less org-level users, attaching it to `request.organizationId`
+  for a `@CurrentOrganization()` decorator — the first real use of
+  NestJS's `@UseGuards()` in this codebase (applied explicitly per
+  controller, not globally like `JwtAuthGuard`/`RolesGuard`)
+- A tenant onboarding wizard walks org creation → first branch → admin
+  invite in one guided flow
+- **Exit criteria (Part 1):** every branch belongs to exactly one
+  organization; an org-level admin can manage regions/franchises/branch
+  groups without branch-level access; feature flags support percentage
+  rollouts; a new organization can complete onboarding end-to-end.
+
+### Part 2: Enterprise Security
+
+- **SSO** — one `SsoOidcProvider` drives all four OIDC-family providers
+  (Google Workspace/Microsoft Entra ID/Okta/generic OIDC, since they
+  differ only by issuer): real `.well-known/openid-configuration`
+  discovery, real authorization-code exchange, and real RS256
+  `id_token` verification via Node's native `crypto.createPublicKey`/
+  `createVerify` — no hand-rolled RSA math. `SsoSamlProvider` builds a
+  real SAML 2.0 AuthnRequest and parses a real Response's `NameID`/
+  attributes, but **does not verify the XML-DSig signature** — a
+  documented gap (hand-rolling XML canonicalization is a well-known way
+  to introduce signature-wrapping vulnerabilities): every SAML identity
+  carries `signatureVerified: false` and the callback throws unless
+  `ENTERPRISE_SSO_SAML_ALLOW_UNVERIFIED=true` is explicitly set, with an
+  exception message warning against production use. Stateless
+  HMAC-signed SSO state (no DB row) binds connection+nonce+timestamp.
+- **SCIM 2.0** — a functional subset, not the full RFC: static
+  bearer-token auth (`ScimAuthGuard`, hashed token — the SCIM analogue
+  of `JwtAuthGuard`), `PATCH` understands only `replace` on `active`
+  (the overwhelmingly common real case — offboarding), `DELETE`
+  deactivates rather than hard-deletes (FK dependencies).
+- **WebAuthn** — genuine cryptographic verification built from scratch:
+  a minimal CBOR decoder, a COSE_Key → Node `KeyObject` parser (EC2/P-256
+  via a fixed DER SPKI prefix wrapping the raw point, verified against
+  RFC 5480; RSA via Node's JWK importer), an `authenticatorData` parser,
+  real registration + assertion verification
+  (`crypto.verify("sha256", ...)`) with signCount-based clone/replay
+  detection. Framed as step-up MFA for an already-authenticated session,
+  not passwordless primary login — sidesteps needing a "who is this for"
+  identity lookup before authentication exists. Does not verify the
+  attestation statement/certificate chain — a commonly-skipped optional
+  trust layer, documented rather than silently absent. Proven by a real
+  end-to-end test using `generateKeyPairSync` + hand-written CBOR
+  encoders mirroring the decoder.
+- **IP allowlisting** (hand-rolled IPv4/IPv6 CIDR matching — safe to
+  hand-roll since it's pure integer arithmetic, unlike XML/CBOR
+  parsing) and **device trust** (`TrustedDevice.fingerprintHash` stores
+  only a SHA-256 hash, never the raw fingerprint) enforced in
+  `TenantContextGuard` — the natural single point every enterprise
+  request already passes through.
+- **Org-wide session oversight** reuses the existing `RefreshToken`
+  table directly (a session IS a refresh token) rather than a parallel
+  session table, adding the cross-user org-scoped view distinct from
+  Phase 5's self-service `/security/sessions`.
+- **Hash-chained enterprise audit trail** — each row's hash covers the
+  previous row's hash, so `verifyChain()` can detect any row altered or
+  deleted after the fact. Distinct from Phase 3's general `AuditLog`
+  (admin CRUD mutations everywhere) — this one is scoped to
+  SSO/SCIM/WebAuthn/security events.
+- **Exit criteria (Part 2):** an org can configure Google Workspace/
+  Entra ID/Okta/SAML SSO and SCIM-provision users; a user can register
+  and assert a hardware security key as step-up MFA; IP allowlists and
+  device trust are enforced at the tenant-context boundary; the
+  enterprise audit trail is tamper-evident.
+
+### Part 3: Global Operations
+
+- **Multi-currency** — `Currency` (global ISO 4217 registry) +
+  `ExchangeRate` (org-scoped, admin-maintained — explicitly not a live
+  FX-feed integration); `CurrencyService.convert()` looks up a rate
+  direct or inverted.
+- **Tax engine** — `TaxRule` (country/region/menu-category scoped,
+  explicitly not a live tax-jurisdiction API); `TaxEngineService.calculateTax()`
+  picks the most specific matching rule (menu-category beats region
+  beats country-wide default) and handles both VAT-style
+  price-inclusive and US-style price-exclusive modes.
+- **Locale/timezone resolution** — `LocalizationService` layers
+  Part 1's existing `Organization.defaultLocale`/`timezone` and
+  `Region.timezone`/`countryCode` fields rather than adding new
+  translation content; `packages/i18n`'s en/am dictionaries (Phase 4)
+  remain the source of translated strings.
+- **Regional pricing** — `RegionalPriceOverride` overrides a
+  `MenuItem.basePrice` per region; **local payment methods** —
+  `LocalPaymentMethodConfig` is a per-country registry over the
+  _existing_ `PaymentMethod` enum and `PaymentProvider` abstraction
+  (Chapa/Cash), not a new payment-provider implementation.
+- **Receipt templates** — `ReceiptTemplate` (legal footer, tax-breakdown
+  visibility, VAT number, date format per country) with a built-in
+  default fallback so a receipt can always render.
+- **Exit criteria (Part 3):** an org can convert between currencies and
+  compute tax using its own configured rates/rules without hard-coding
+  Ethiopia-only assumptions; a region can carry its own menu pricing and
+  offer country-appropriate payment methods; receipts render with
+  country-appropriate formatting.
+
+### Part 4: Enterprise Analytics
+
+- **Corporate/franchise/region/branch-group revenue rollups** and a
+  **cross-region breakdown** (with an "Unassigned" bucket) — all
+  aggregate the existing `Order` table via a single `groupBy` query per
+  rollup, using the same `PAID_STATUSES` "counts as revenue" convention
+  as `modules/analytics/analytics.service.ts`. This is a genuinely new
+  capability: Phase 5/6's `AnalyticsService`/`ExecutiveService` are
+  actor-branch-scoped at most, nothing before this phase aggregates
+  across an entire organization.
+- **Branch benchmarking** (rank + percent vs. the org average) and an
+  **executive scorecard** (current vs. the immediately prior period of
+  equal length, revenue growth %, top/bottom branch).
+- **Forecast aggregation** sums Phase 11 Part 2's per-branch
+  `ForecastingFacadeService.revenue()` prediction across a branch set —
+  never recomputes a forecast, only aggregates existing ones (confidence
+  is averaged, not summed, since it's a 0–1 calibrated score).
+- **CSV BI exports** for the corporate dashboard, benchmark, and
+  scorecard — same hand-rolled CSV convention as Phase 11 Part 3's
+  copilot exports (no PDF/XLSX library).
+- **Exit criteria (Part 4):** a corporate admin can see revenue rolled
+  up across the whole org, by franchise, by region, or by branch group;
+  rank branches against the org average; see period-over-period growth;
+  and export any of these as CSV.
+
+### Part 5: Reliability & Infrastructure
+
+- **App-level observability** — a new `common/observability/` module:
+  `RequestContextService` (AsyncLocalStorage-based traceId, generated or
+  propagated from an inbound `x-trace-id` header) reaches every log line
+  and the response; `JsonLoggerService` emits JSON-lines to stdout (the
+  format log aggregators expect, hand-rolled since it's a small,
+  well-defined transform); `MetricsService`/`HttpMetricsInterceptor`
+  expose `/metrics` via `prom-client` (a small, purpose-built new
+  dependency — the Prometheus exposition format has real edge cases a
+  hand-rolled writer doesn't cover well). Documented as correlation-ID
+  tracing, not full OpenTelemetry span auto-instrumentation — wiring
+  `@opentelemetry/sdk-node` is a large new dependency tree left as
+  deliberate future work.
+- **Kubernetes** (`infra/k8s/`) — `Deployment`/`Service`/
+  `HorizontalPodAutoscaler`/`PodDisruptionBudget`/`Ingress` for
+  `apps/api`, probes wired to the existing Phase 1 `/health`
+  (liveness) and `/health/ready` (readiness, checks Postgres+Redis).
+- **Blue/green** — two `Deployment`s (`api-blue`/`api-green`) + a
+  `switch.sh` script flipping the `Service` selector — the standard
+  vanilla-Kubernetes approach, not Argo Rollouts/Flagger. **Canary** —
+  ingress-nginx's `canary-weight` annotation for real weighted traffic
+  splitting, not a replica-count approximation.
+- **CI/CD** (`.github/workflows/fresh-cup-deploy.yml`) — build/push →
+  canary deploy → a manual soak-gate GitHub Environment → promote to
+  stable, gated on a version tag or manual dispatch (no live cluster
+  wired to this repo's secrets in this environment).
+- **Disaster recovery** (`infra/backup/`) — nightly `pg_dump` to
+  S3-compatible storage with retention pruning, and a **weekly automated
+  restore test** that restores the latest archive into a disposable
+  database and verifies it before dropping it — a backup nobody has
+  restored is not a verified backup. RPO ≤24h, RTO ≤1h; full runbook in
+  `infra/backup/README.md`.
+- **Metrics, alerting, and log aggregation** (`infra/observability/`) —
+  a Prometheus scrape config keyed off the Deployments'
+  `prometheus.io/scrape` annotations, a `PrometheusRule` (error rate,
+  p95 latency, crash-looping, degraded health dependencies, HPA
+  saturation, failed restore test), an OpenTelemetry Collector config
+  bridging the app's traceId-correlated JSON logs, and a Fluent Bit →
+  Loki config.
+- **Exit criteria (Part 5):** `apps/api` exposes `/metrics` and
+  traceId-correlated structured logs; valid, reviewed Kubernetes
+  manifests exist for steady-state, blue/green, and canary deployment;
+  a documented, scriptable deploy pipeline exists; backups run nightly
+  and are proven restorable weekly; alert rules exist for the failure
+  modes that matter. None of the Kubernetes/CI-CD/backup infrastructure
+  has a live cluster to run against in this environment — manifests and
+  scripts are valid and reviewed, not exercised end-to-end.
+
+### apps/admin: Enterprise section
+
+- A new `/enterprise` nav section (Organization, Regions, Franchises,
+  Feature Flags, Licensing, SSO & Security, Currency & Tax, Analytics) —
+  `packages/types/admin/enterprise.ts` mirrors the backend DTOs, a new
+  `AdminEnterpriseResource` in `packages/api-client` calls the
+  `enterprise/*` routes (most need no explicit `organizationId` —
+  `TenantContextGuard` resolves it from the caller), and eight pages
+  follow the existing AI Studio section's layout+Tabs+TanStack-Query
+  pattern.
+
+179 new tests alongside the existing 539, bringing the API suite to 718
+tests; typecheck/lint clean across the whole monorepo, a full Nest app
+boot verifying every new provider/service/guard/interceptor resolves in
+the DI graph (this is what caught a genuine circular-module-dependency
+bug — `IpAllowlistModule` importing a controller that depended on
+`TenancyModule`, which imported `IpAllowlistModule` back — that neither
+`tsc` nor Jest could catch, since both only exercise classes with mocked
+dependencies), and a clean `apps/admin` production build including all
+eight new Enterprise routes.
+
+- **Exit criteria (Phase 12):** a platform operator can create a new
+  tenant organization, configure SSO/SCIM/WebAuthn for it, configure its
+  currency/tax/regional-pricing rules, see revenue rolled up across its
+  branches/regions/franchises, and deploy `apps/api` via a documented
+  Kubernetes + blue/green/canary + CI/CD + disaster-recovery pipeline —
+  all without touching any existing Phase 1–11 endpoint or table.
+
 ## Sequencing notes
 
 - Auth and RBAC came first (Phase 1) because every other phase's endpoints
@@ -760,3 +987,17 @@ marketing,workforce,memory,assistant}` routes, all untouched — Part 2's
   take real actions safely — building the approval layer first, before
   anything that drafts into it, avoided a chicken-and-egg ordering
   problem within the part itself.
+- Phase 12 (Enterprise & Global Restaurant Platform) is numbered after
+  Phase 11 for the same reason Phase 11 jumped Phases 7–9: it was scoped
+  and built as its own self-contained unit (multi-tenancy, enterprise
+  security, globalization, cross-branch analytics, deploy
+  infrastructure) with no dependency on the still-open Phases 7–10, and
+  waiting for those to land first would have gained nothing. It sits
+  ABOVE every existing model as a new tenant root (`Organization` owns
+  `Branch`, not the reverse) rather than reaching into Phases 1–11's
+  schema, which is exactly what let it ship without touching a single
+  existing endpoint, table, or test. It does not complete Phase 8
+  (Analytics at scale — that phase's materialized aggregation views and
+  cohort retention analysis remain open; Phase 12 Part 4's rollups are
+  on-demand `groupBy` queries, the same "no materialized views" posture
+  every prior analytics phase has kept) or any of Phases 7/9/10.

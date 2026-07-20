@@ -671,6 +671,89 @@ execute a real side effect (`approve`, policy-blocked writes) are
 (approval history) are the governance module's history views — Part 3
 deliberately doesn't duplicate them under `/admin/ai/governance`.
 
+## Enterprise & Global Restaurant Platform (Phase 12)
+
+Every route below lives under `/enterprise/*` — a separate prefix from
+`/admin/*` above, since `apps/api/src/enterprise/` is its own
+tenant-scoped controller tree. Most routes need no `organizationId` in
+the path or body: `TenantContextGuard` (applied per-controller via
+`@UseGuards()`, not globally) resolves it from the caller's branch or
+`OrganizationMembership` and exposes it via `@CurrentOrganization()`.
+Routes requiring an org-level role use `@OrgRoles(...)` against the
+`OrgRole` enum (`org_owner`,`org_admin`,`franchise_admin`,
+`region_manager`) — a platform `ADMIN` account always bypasses this,
+same precedent as branch-scoped access.
+
+| Method                       | Path                                                                                                      | Notes                                                                                                        |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| GET                          | `/enterprise/organizations/me`                                                                            | the caller's organization                                                                                    |
+| PATCH                        | `/enterprise/organizations/me`                                                                            | `org_owner`/`org_admin` only                                                                                 |
+| GET, POST                    | `/enterprise/regions`                                                                                     | list / create                                                                                                |
+| PATCH, DELETE                | `/enterprise/regions/{id}`                                                                                | update / delete                                                                                              |
+| POST                         | `/enterprise/regions/{id}/branches/{branchId}`                                                            | assign a branch to a region                                                                                  |
+| GET, POST                    | `/enterprise/franchises`                                                                                  | list / create                                                                                                |
+| PATCH                        | `/enterprise/franchises/{id}`                                                                             | update                                                                                                       |
+| POST                         | `/enterprise/franchises/{id}/branches/{branchId}`                                                         | assign a branch                                                                                              |
+| GET, POST                    | `/enterprise/branch-groups`                                                                               | list / create                                                                                                |
+| GET                          | `/enterprise/branch-groups/{id}/branches`                                                                 | list branch ids in a group                                                                                   |
+| DELETE                       | `/enterprise/branch-groups/{id}`                                                                          | delete                                                                                                       |
+| POST, DELETE                 | `/enterprise/branch-groups/{id}/branches/{branchId}`                                                      | add / remove a branch                                                                                        |
+| GET                          | `/enterprise/feature-flags/definitions`                                                                   | list every registered flag                                                                                   |
+| POST                         | `/enterprise/feature-flags/definitions`                                                                   | register a flag key (`org_owner`/`org_admin`)                                                                |
+| GET                          | `/enterprise/feature-flags/overrides`                                                                     | this org's overrides                                                                                         |
+| POST                         | `/enterprise/feature-flags/overrides/{key}`                                                               | body `{ enabled, branchId?, rolloutPercentage? }`                                                            |
+| GET                          | `/enterprise/feature-flags/evaluate/{key}`                                                                | `?branchId=` — resolved boolean for this org/branch                                                          |
+| GET                          | `/enterprise/licensing/plans`                                                                             | list sellable plans                                                                                          |
+| POST                         | `/enterprise/licensing/plans`                                                                             | platform `ADMIN` only — cross-tenant                                                                         |
+| GET, POST                    | `/enterprise/licensing/subscription`                                                                      | get / start-or-change this org's subscription                                                                |
+| POST                         | `/enterprise/licensing/subscription/cancel`                                                               | cancel                                                                                                       |
+| GET                          | `/enterprise/licensing/seats`                                                                             | seat usage vs. plan limit                                                                                    |
+| GET                          | `/enterprise/licensing/entitlements/{featureKey}`                                                         | whether the current plan entitles a feature                                                                  |
+| POST                         | `/enterprise/onboarding/*`                                                                                | tenant onboarding wizard (org → first branch → admin invite)                                                 |
+| GET, POST                    | `/enterprise/sso/connections`                                                                             | list / create SSO connections                                                                                |
+| GET                          | `/enterprise/sso/{organizationId}/{connectionId}/authorize`                                               | `@Public()` — begins the OIDC/SAML login redirect                                                            |
+| POST                         | `/enterprise/sso/{organizationId}/{connectionId}/callback/oidc`, `/callback/saml`                         | `@Public()` — completes SSO login, issues a token pair                                                       |
+| `/enterprise/scim/*`         | SCIM 2.0 (`ScimAuthGuard` — a static bearer token, not JWT)                                               | functional subset: `Users` CRUD, `PATCH` understands only `replace` on `active`                              |
+| POST                         | `/enterprise/webauthn/registration/challenge`, `/registration/verify`                                     | register a hardware security key (step-up MFA, requires an existing JWT session)                             |
+| POST                         | `/enterprise/webauthn/assertion/challenge`, `/assertion/verify`                                           | assert a registered key                                                                                      |
+| GET, DELETE                  | `/enterprise/webauthn/credentials`, `/credentials/{id}`                                                   | list / remove                                                                                                |
+| GET, POST                    | `/enterprise/ip-allowlist`                                                                                | list / add a CIDR entry                                                                                      |
+| DELETE                       | `/enterprise/ip-allowlist/{id}`                                                                           | remove                                                                                                       |
+| `/enterprise/device-trust/*` | trusted-device registry (fingerprint stored as a SHA-256 hash only)                                       |
+| GET                          | `/enterprise/sessions`                                                                                    | org-wide refresh-token session list (`org_owner`/`org_admin`)                                                |
+| DELETE                       | `/enterprise/sessions/{id}`                                                                               | revoke a session                                                                                             |
+| GET                          | `/enterprise/audit`                                                                                       | the hash-chained enterprise audit trail                                                                      |
+| GET                          | `/enterprise/audit/verify`                                                                                | walks the chain, reports whether any row was altered                                                         |
+| GET                          | `/enterprise/currency/currencies`                                                                         | global currency registry                                                                                     |
+| POST                         | `/enterprise/currency/currencies`                                                                         | platform `ADMIN` only                                                                                        |
+| GET, POST                    | `/enterprise/currency/exchange-rates`                                                                     | list / set this org's admin-maintained rates                                                                 |
+| POST                         | `/enterprise/currency/convert`                                                                            | body `{ fromCurrencyCode, toCurrencyCode, amountMinor }`                                                     |
+| GET, POST                    | `/enterprise/tax/rules`                                                                                   | list / create tax rules                                                                                      |
+| DELETE                       | `/enterprise/tax/rules/{id}`                                                                              | delete                                                                                                       |
+| POST                         | `/enterprise/tax/calculate`                                                                               | body `{ countryCode, regionId?, menuCategoryId?, amountMinor }` — most-specific-rule lookup                  |
+| GET                          | `/enterprise/localization/locales`                                                                        | supported locales                                                                                            |
+| GET                          | `/enterprise/localization/context`                                                                        | resolved locale/timezone/currency for this org                                                               |
+| GET                          | `/enterprise/localization/context/branches/{branchId}`                                                    | same, layered with the branch's region                                                                       |
+| GET, POST                    | `/enterprise/pricing/regions/{regionId}/overrides`                                                        | list / set a menu item's regional price override                                                             |
+| DELETE                       | `/enterprise/pricing/regions/{regionId}/overrides/{menuItemId}`                                           | remove                                                                                                       |
+| GET                          | `/enterprise/pricing/menu-items/{menuItemId}/effective-price`                                             | `?regionId=` — override if one exists, else base price                                                       |
+| GET                          | `/enterprise/pricing/payment-methods`, `/payment-methods/{countryCode}`                                   | all configs / enabled methods for a country                                                                  |
+| POST                         | `/enterprise/pricing/payment-methods`                                                                     | body `{ countryCode, method, isEnabled?, sortOrder? }`                                                       |
+| GET, POST                    | `/enterprise/receipt-templates`                                                                           | list / upsert per-country receipt templates                                                                  |
+| GET                          | `/enterprise/receipt-templates/{countryCode}`                                                             | resolved template, falls back to a built-in default                                                          |
+| GET                          | `/enterprise/analytics/corporate-dashboard`                                                               | `?from=&to=` — org-wide revenue/order rollup                                                                 |
+| GET                          | `/enterprise/analytics/franchises/{franchiseId}`, `/regions/{regionId}`, `/branch-groups/{branchGroupId}` | scoped rollups                                                                                               |
+| GET                          | `/enterprise/analytics/cross-region`                                                                      | one rollup per region + an "Unassigned" bucket                                                               |
+| GET                          | `/enterprise/analytics/benchmark`                                                                         | branches ranked against the org average                                                                      |
+| GET                          | `/enterprise/analytics/scorecard`                                                                         | current vs. prior-period growth, top/bottom branch                                                           |
+| GET                          | `/enterprise/analytics/forecast`                                                                          | org-wide aggregated revenue forecast (sums Phase 11 Part 2's per-branch predictions)                         |
+| GET                          | `/enterprise/analytics/branches`                                                                          | list org branches (for scope pickers)                                                                        |
+| GET                          | `/enterprise/analytics/exports/corporate-dashboard`, `/exports/benchmark`, `/exports/scorecard`           | CSV export — returns `{ filename, mimeType, content }`, same convention as Phase 11 Part 3's copilot exports |
+
+`GET /metrics` (Prometheus exposition format, `@Public()`) and the
+existing `GET /health`/`GET /health/ready` are excluded from the
+`/api/v1` prefix, same as before — see `ARCHITECTURE.md` §13.
+
 ## Audit logs (Phase 3)
 
 An `@Auditable(entityType)` decorator + a global interceptor write one

@@ -64,7 +64,22 @@ fresh-cup-platform/
 │   │   │   │   │                   #   distinct from the top-level apps/api/src/websockets/ below
 │   │   │   │   ├── dto/, entities/, events/, utils/
 │   │   │   │   └── ai-intelligence.module.ts
+│   │   │   ├── enterprise/         # Phase 12 — Enterprise & Global Restaurant Platform
+│   │   │   │   │                   #   (sibling tree to modules/ and intelligence/ above)
+│   │   │   │   ├── tenancy/        # TenantContextService/Guard, @CurrentOrganization()
+│   │   │   │   ├── rbac/           # OrgRolesGuard — a second, additive OrgRole axis
+│   │   │   │   ├── organizations/, regions/, franchises/, branch-groups/
+│   │   │   │   ├── feature-flags/, global-config/, licensing/, onboarding/
+│   │   │   │   ├── sso/            # OIDC (one provider, 4 issuers) + SAML 2.0
+│   │   │   │   ├── scim/           # SCIM 2.0 user provisioning (functional subset)
+│   │   │   │   ├── webauthn/       # hand-rolled CBOR/COSE — step-up MFA
+│   │   │   │   ├── ip-allowlist/, device-trust/, sessions/, audit/
+│   │   │   │   ├── currency/, tax/, localization/, pricing/, receipts/  # Part 3
+│   │   │   │   ├── analytics/      # Part 4 — corporate/region/franchise rollups, forecast aggregation
+│   │   │   │   └── enterprise.module.ts
 │   │   │   ├── common/             # guards, interceptors, pipes, decorators
+│   │   │   │   └── observability/  # Phase 12 Part 5 — RequestContextService (traceId),
+│   │   │   │                       #   JsonLoggerService, MetricsService (/metrics)
 │   │   │   ├── websockets/         # /ws/orders, /ws/delivery gateways
 │   │   │   ├── queue/              # BullMQ processors
 │   │   │   ├── config/             # env schema/validation
@@ -90,7 +105,9 @@ fresh-cup-platform/
 │   │   │   ├── inventory/
 │   │   │   ├── promotions/
 │   │   │   ├── staff/
-│   │   │   └── analytics/
+│   │   │   ├── analytics/
+│   │   │   └── enterprise/         # Phase 12 — Organization/Regions/Franchises/Feature
+│   │   │                           #   Flags/Licensing/SSO/Currency & Tax/Analytics
 │   │   └── components/
 │   │
 │   ├── delivery/                   # Next.js PWA — rider app
@@ -113,9 +130,14 @@ fresh-cup-platform/
 │   └── utils/                      # currency formatting, date/locale helpers, validation schemas
 │
 ├── infra/
-│   ├── terraform/                  # AWS resources: VPC, RDS, ElastiCache, ECS, S3, CloudFront
 │   ├── docker/                     # Dockerfiles per app, docker-compose for local dev
-│   └── github-actions/             # reusable workflow fragments
+│   ├── k8s/                        # Phase 12 Part 5 — base/ (Deployment/Service/HPA/PDB/
+│   │   │                           #   Ingress), blue-green/, canary/ (see infra/k8s/README.md)
+│   ├── observability/              # Prometheus scrape config, alert rules, OTel Collector
+│   │   │                           #   config, Fluent Bit → Loki config
+│   ├── backup/                     # nightly pg_dump CronJob + weekly automated restore-test
+│   │   │                           #   CronJob (see infra/backup/README.md)
+│   └── terraform/                  # AWS resources: VPC, RDS, ElastiCache, EKS, S3, CloudFront (planned, not yet written)
 │
 ├── docs/                           # this directory
 │   ├── ARCHITECTURE.md
@@ -127,7 +149,9 @@ fresh-cup-platform/
 │   ├── ROADMAP.md
 │   └── adr/                        # Architecture Decision Records, one file per significant decision
 │
-├── .github/workflows/              # lint/test/build/deploy pipelines
+├── .github/workflows/              # fresh-cup-ci.yml (lint/typecheck/build/test),
+│                                    #   fresh-cup-deploy.yml (Phase 12 — build/push image →
+│                                    #   canary → manual soak gate → promote)
 ├── turbo.json
 ├── pnpm-workspace.yaml
 └── package.json

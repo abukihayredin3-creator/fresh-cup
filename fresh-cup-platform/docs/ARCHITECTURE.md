@@ -149,6 +149,7 @@ module (e.g., Notifications) becomes a bottleneck.
 - **Autonomous Restaurant Intelligence Platform** (Phase 11 Part 3, same `apps/api/src/intelligence` tree) — a Human Approval Layer + governance policy engine, multi-agent AI, an autonomous decision engine, an Executive Copilot, a knowledge base, a workflow/automation engine, and a scenario simulator/digital twin, all built on §6b/§6c — see §6d
 - **Audit** — a cross-cutting interceptor logging every admin mutation (actor, action, entity, after-state), not a bounded context of its own
 - **Branches** — restaurant locations (one today, extensible)
+- **Enterprise & Global Restaurant Platform** (Phase 12, `apps/api/src/enterprise`) — a new tenant root (`Organization`) sitting ABOVE `Branch`, multi-tenant RBAC, SSO/SCIM/WebAuthn, multi-currency/tax/localization, and cross-branch analytics — see §6e
 
 Modules communicate in-process via an internal event bus (Nest
 `EventEmitter`) for cross-cutting concerns — e.g., `order.paid` triggers
@@ -419,6 +420,56 @@ Hallucination flagging is a manual admin action, not an automatic
 detector — this platform has no ground-truth signal to detect a
 fabricated claim on its own.
 
+### 6e. Enterprise & Global Restaurant Platform (Phase 12)
+
+A new `apps/api/src/enterprise` tree, sibling to `modules/` and
+`intelligence/`, additive rather than a retrofit of the 40+ tables Phases
+1–11 already built. `Organization` becomes the tenant root ABOVE the
+existing `Branch` model (`Branch.organizationId` is a required FK,
+backfilled via a hand-sequenced migration into one default org so every
+pre-Phase-12 branch is tenant-scoped from row one) — not a per-table
+`organizationId` retrofit across the rest of the schema.
+
+**Tenant isolation.** `TenantContextGuard` resolves `organizationId` from
+the caller's branch (the common case) or `OrganizationMembership` for
+branch-less org-level users, attaching it to `request.organizationId` for
+a `@CurrentOrganization()` decorator — applied explicitly per controller
+via `@UseGuards()` (the first real use of that decorator in this
+codebase; `JwtAuthGuard`/`RolesGuard` are global via `APP_GUARD`). A
+second, additive `OrgRole` axis (`ORG_OWNER`/`ORG_ADMIN`/
+`FRANCHISE_ADMIN`/`REGION_MANAGER`, via `OrganizationMembership`) layers
+on top of the existing branch-scoped `UserRole`, enforced by
+`OrgRolesGuard` — a platform `UserRole.ADMIN` always bypasses both, same
+precedent as `assertBranchAccess`.
+
+**Enterprise security.** One `SsoOidcProvider` drives Google Workspace/
+Entra ID/Okta/generic OIDC (real discovery, real token exchange, real
+RS256 verification via Node's native `crypto` — no hand-rolled RSA); the
+SAML provider builds a real AuthnRequest and parses a real Response but
+does not verify the XML-DSig signature, a documented gap gated behind an
+explicit env var rather than a silent shortcut. WebAuthn is built from
+scratch (a minimal CBOR decoder, COSE_Key → Node `KeyObject`, real
+`crypto.verify` assertion checking with signCount replay detection) as a
+step-up MFA factor, not passwordless primary login. A hash-chained
+`EnterpriseAuditLog` (each row covers the previous row's hash) makes
+SSO/SCIM/WebAuthn/security events tamper-evident, distinct from Phase 3's
+general `AuditLog`.
+
+**Globalization.** `Currency`/`ExchangeRate` (admin-maintained, not a live
+FX feed), `TaxRule` (rule-based lookup by country/region/menu-category,
+not a live tax-jurisdiction API), and `RegionalPriceOverride`/
+`LocalPaymentMethodConfig` (a registry over the existing `PaymentMethod`
+enum and `PaymentProvider` abstraction, not a new payment rail) all
+follow the same "hand-roll the lookup, don't fake a live external
+integration" posture as the rest of this platform.
+
+**Enterprise analytics.** Corporate/franchise/region/branch-group revenue
+rollups, branch benchmarking, an executive scorecard, and forecast
+aggregation are all built by `groupBy`-aggregating the existing `Order`
+table (same `PAID_STATUSES` convention as the Phase 3 Analytics module)
+and summing §6c's existing per-branch forecasts — a genuinely new
+cross-branch capability, but no new query path or materialized view.
+
 ## 7. API architecture
 
 Full detail in [`API_DESIGN.md`](API_DESIGN.md). Summary:
@@ -506,11 +557,43 @@ out_for_delivery → delivered → completed}`
 
 ## 13. Observability
 
-- **Errors:** Sentry across API, web, admin, delivery, and mobile
-- **Logs:** structured JSON logs from the API, shipped to a managed log store (CloudWatch Logs, or Grafana Loki if self-hosting)
-- **Metrics/dashboards:** Grafana Cloud (free/low tier is enough at this scale) tracking request latency, error rate, queue depth, DB connection saturation
-- **Uptime/alerts:** synthetic checks on checkout and order-status endpoints; PagerDuty/Slack alert on error-rate or latency SLO breach
-- **Business metrics:** order volume, GMV, average prep time, and delivery SLA surfaced directly in the Admin Analytics module (not just infra dashboards)
+Implemented as of Phase 12 Part 5 (`apps/api/src/common/observability/`,
+`infra/observability/`, `infra/backup/`) — see `DEPLOYMENT.md` for the
+Kubernetes/CI-CD/DR side:
+
+- **Logs:** `JsonLoggerService` emits JSON-lines to stdout, each line
+  carrying a `traceId` propagated through `RequestContextService`
+  (Node `AsyncLocalStorage`, generated or taken from an inbound
+  `x-trace-id` header) — the format a log-aggregation pipeline expects to
+  parse without a regex. `infra/observability/fluent-bit-configmap.yaml`
+  ships them into Loki.
+- **Metrics:** `GET /metrics` (prom-client — a small, purpose-built
+  dependency, not hand-rolled, since the Prometheus exposition format has
+  real edge cases) exposes request-duration histograms, request counters,
+  and default Node process metrics; `infra/observability/prometheus-scrape-config.yaml`
+  auto-discovers pods via their `prometheus.io/scrape` annotation.
+- **Tracing:** correlation-ID tracing via the same `traceId`, not full
+  OpenTelemetry span auto-instrumentation — a documented scope decision
+  (see `RequestContextService`'s docblock and
+  `infra/observability/otel-collector-config.yaml`), since wiring
+  `@opentelemetry/sdk-node` is a large new dependency tree left as
+  deliberate future work.
+- **Alerting:** `infra/observability/alert-rules.yaml` (a
+  `PrometheusRule`) covers 5xx rate, p95 latency, pod crash-looping,
+  degraded `/health/ready` dependencies, HPA saturation, and a failed
+  weekly backup-restore test.
+- **Health checks:** `GET /health` (liveness — never touches
+  Postgres/Redis, so a dependency outage doesn't trigger a restart loop)
+  and `GET /health/ready` (readiness — checks both) from Phase 1, wired
+  to Kubernetes probes in `infra/k8s/base/api-deployment.yaml`.
+- **Business metrics:** order volume, GMV, average prep time, and
+  delivery SLA surfaced directly in the Admin Analytics module (not just
+  infra dashboards) — unchanged from Phase 3/5.
+- **Still aspirational, not built:** error tracking (Sentry), a hosted
+  metrics/log backend actually running (Grafana Cloud, Loki, Tempo —
+  the configs above are valid and reviewed but have no live backend to
+  point at in this environment), synthetic uptime checks, and
+  PagerDuty/Slack paging.
 
 ## 14. Testing strategy
 
