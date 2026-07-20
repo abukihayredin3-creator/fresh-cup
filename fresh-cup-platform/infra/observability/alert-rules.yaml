@@ -1,0 +1,82 @@
+# PrometheusRule for a prometheus-operator-managed cluster. If you're
+# not running the operator, the `spec.groups` block below is also a
+# valid plain Prometheus rule file — just pass it via `rule_files:` in
+# prometheus.yml instead of applying this as a CRD.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: fresh-cup-api-alerts
+  namespace: fresh-cup
+  labels:
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: fresh-cup-api.rules
+      rules:
+        - alert: FreshCupApiHighErrorRate
+          expr: |
+            sum(rate(fresh_cup_api_http_requests_total{status_code=~"5.."}[5m]))
+            /
+            sum(rate(fresh_cup_api_http_requests_total[5m])) > 0.05
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Fresh Cup API 5xx rate above 5%"
+            description: "{{ $value | humanizePercentage }} of requests over the last 5m returned a 5xx status."
+
+        - alert: FreshCupApiHighLatency
+          expr: |
+            histogram_quantile(0.95, sum(rate(fresh_cup_api_http_request_duration_seconds_bucket[5m])) by (le)) > 2
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Fresh Cup API p95 latency above 2s"
+            description: "p95 request latency has been above 2 seconds for 10 minutes."
+
+        - alert: FreshCupApiPodCrashLooping
+          expr: |
+            increase(kube_pod_container_status_restarts_total{namespace="fresh-cup", container="api"}[15m]) > 3
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Fresh Cup API pod restarting repeatedly"
+            description: "{{ $labels.pod }} has restarted more than 3 times in 15 minutes."
+
+        - alert: FreshCupApiReadinessDegraded
+          # health.controller.ts's /health/ready returns 503 when
+          # Postgres or Redis is unreachable — HttpMetricsInterceptor
+          # records that as a 503 on the /health/ready route.
+          expr: |
+            sum(rate(fresh_cup_api_http_requests_total{route="/health/ready", status_code="503"}[5m])) > 0
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Fresh Cup API reports a degraded dependency (Postgres or Redis)"
+
+        - alert: FreshCupRestoreTestFailed
+          # See infra/backup/README.md — a failed restore-test Job means
+          # the most recent backup archive may be unusable.
+          expr: |
+            kube_job_status_failed{namespace="fresh-cup", job_name=~"fresh-cup-pg-restore-test-.*"} > 0
+          for: 0m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Weekly backup restore test failed"
+            description: "The most recent Postgres backup archive failed to restore or verify — see infra/backup/README.md."
+
+        - alert: FreshCupApiHpaAtMaxReplicas
+          expr: |
+            kube_horizontalpodautoscaler_status_current_replicas{namespace="fresh-cup", horizontalpodautoscaler="fresh-cup-api"}
+            >=
+            kube_horizontalpodautoscaler_spec_max_replicas{namespace="fresh-cup", horizontalpodautoscaler="fresh-cup-api"}
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Fresh Cup API HPA pinned at max replicas"
+            description: "Sustained load has kept the API at its HPA ceiling for 15 minutes — consider raising maxReplicas."

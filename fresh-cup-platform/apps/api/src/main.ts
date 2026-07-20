@@ -5,10 +5,12 @@ import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
 import { AppModule } from "./app.module";
 import { configureApp } from "./bootstrap";
 import type { EnvironmentVariables } from "./common/config/env.validation";
+import { JsonLoggerService } from "./common/observability/json-logger.service";
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { rawBody: true });
   configureApp(app);
+  app.useLogger(app.get(JsonLoggerService));
 
   const config = app.get(ConfigService<EnvironmentVariables, true>);
 

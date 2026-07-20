@@ -9,6 +9,7 @@ import { HttpExceptionFilter } from "./common/filters/http-exception.filter";
 import { AppThrottlerGuard } from "./common/guards/app-throttler.guard";
 import { JwtAuthGuard } from "./common/guards/jwt-auth.guard";
 import { RolesGuard } from "./common/guards/roles.guard";
+import { ObservabilityModule } from "./common/observability/observability.module";
 import { PrismaModule } from "./database/prisma.module";
 import { EnterpriseModule } from "./enterprise/enterprise.module";
 import { AiIntelligenceModule } from "./intelligence/ai-intelligence.module";
@@ -53,6 +54,7 @@ import { WebsocketsModule } from "./websockets/websockets.module";
     // scheduled/cron infrastructure in the codebase.
     ScheduleModule.forRoot(),
     ThrottlerModule.forRoot([{ name: "default", ttl: 60_000, limit: 60 }]),
+    ObservabilityModule,
     PrismaModule,
     RedisModule,
     HealthModule,

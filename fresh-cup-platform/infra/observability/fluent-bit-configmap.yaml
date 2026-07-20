@@ -1,0 +1,59 @@
+# Log aggregation: ships every pod's stdout (Fresh Cup API's JSON lines
+# from JsonLoggerService, plus everything else in the cluster) into
+# Loki, queryable in Grafana alongside the Prometheus metrics and
+# PrometheusRule alerts in this same directory. Pair with the standard
+# Fluent Bit DaemonSet Helm chart (`fluent/fluent-bit`) — this ConfigMap
+# is the piece specific to this platform (JSON parsing + Kubernetes
+# metadata enrichment), not a full Fluent Bit install.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fresh-cup-fluent-bit-config
+  namespace: fresh-cup
+data:
+  fluent-bit.conf: |
+    [SERVICE]
+        Flush         5
+        Log_Level     info
+        Parsers_File  parsers.conf
+
+    [INPUT]
+        Name              tail
+        Path              /var/log/containers/fresh-cup-api-*.log
+        Tag               fresh-cup.api
+        Parser            docker
+        Refresh_Interval  5
+        Mem_Buf_Limit     16MB
+
+    [FILTER]
+        Name                kubernetes
+        Match               fresh-cup.*
+        Kube_URL            https://kubernetes.default.svc:443
+        Merge_Log           On
+        Merge_Log_Key       log_processed
+        K8S-Logging.Parser  On
+
+    [FILTER]
+        # JsonLoggerService already emits {timestamp, level, message,
+        # context, traceId} per line — parse it so `traceId` and `level`
+        # become first-class Loki labels/fields, not buried in a string.
+        Name    parser
+        Match   fresh-cup.*
+        Key_Name log_processed
+        Parser  fresh_cup_json
+
+    [OUTPUT]
+        Name            loki
+        Match           fresh-cup.*
+        Host            loki.observability.svc.cluster.local
+        Port            3100
+        Labels          job=fresh-cup-api
+        Label_keys      $level,$traceId
+        Line_format     json
+
+  parsers.conf: |
+    [PARSER]
+        Name        fresh_cup_json
+        Format      json
+        Time_Key    timestamp
+        Time_Format %Y-%m-%dT%H:%M:%S.%LZ

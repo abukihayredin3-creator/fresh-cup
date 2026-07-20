@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: fresh-cup-api
+  namespace: fresh-cup
+  labels:
+    app: fresh-cup-api
+spec:
+  # Blue/green (infra/k8s/blue-green/) repoints this selector at
+  # api-blue or api-green instead of this base Deployment's "app:
+  # fresh-cup-api" label during a blue/green cutover.
+  selector:
+    app: fresh-cup-api
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+  type: ClusterIP

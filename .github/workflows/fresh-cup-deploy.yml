@@ -1,0 +1,130 @@
+name: Fresh Cup Deploy
+
+# Build/push the API image, then deploy via canary -> soak -> promote.
+# Gated to manual dispatch (or a version tag push) since this is a
+# documented deploy PIPELINE, not a live deploy — there is no cluster
+# wired to this repo's secrets in this environment. A real rollout needs
+# these repo/environment secrets configured: KUBE_CONFIG (base64
+# kubeconfig for a cluster with infra/k8s/base already applied once).
+#
+# See infra/k8s/README.md for what each manifest directory does.
+
+on:
+  push:
+    tags:
+      - "api-v*"
+  workflow_dispatch:
+    inputs:
+      canary_weight:
+        description: "Initial canary traffic weight (percent)"
+        default: "10"
+        required: false
+
+defaults:
+  run:
+    working-directory: fresh-cup-platform
+
+concurrency:
+  group: fresh-cup-deploy
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/fresh-cup-api
+
+jobs:
+  build-and-push:
+    name: Build & push image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image_tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute image tag
+        id: tag
+        run: echo "tag=${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: fresh-cup-platform
+          file: fresh-cup-platform/apps/api/Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:${{ steps.tag.outputs.tag }}
+            ${{ env.IMAGE }}:canary
+
+  deploy-canary:
+    name: Deploy canary
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/setup-kubectl@v4
+
+      - name: Configure kubeconfig
+        run: |
+          mkdir -p "$HOME/.kube"
+          echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > "$HOME/.kube/config"
+
+      - name: Point canary Deployment at the new image
+        run: |
+          kubectl -n fresh-cup set image deployment/fresh-cup-api-canary \
+            api=${{ env.IMAGE }}:${{ needs.build-and-push.outputs.image_tag }}
+          kubectl -n fresh-cup rollout status deployment/fresh-cup-api-canary --timeout=180s
+
+      - name: Set canary traffic weight
+        run: |
+          kubectl -n fresh-cup annotate ingress fresh-cup-api-canary \
+            nginx.ingress.kubernetes.io/canary-weight="${{ github.event.inputs.canary_weight || '10' }}" \
+            --overwrite
+
+  soak:
+    name: Soak (manual gate)
+    runs-on: ubuntu-latest
+    needs: deploy-canary
+    environment:
+      name: production-soak
+      # Configure this GitHub Environment with required reviewers so a
+      # human confirms the canary looks healthy (error rate, p95
+      # latency, alert rules in infra/observability/alert-rules.yaml)
+      # before promotion proceeds.
+    steps:
+      - run: echo "Soak window approved — proceeding to promote."
+
+  promote:
+    name: Promote canary to stable
+    runs-on: ubuntu-latest
+    needs: [build-and-push, soak]
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/setup-kubectl@v4
+
+      - name: Configure kubeconfig
+        run: |
+          mkdir -p "$HOME/.kube"
+          echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > "$HOME/.kube/config"
+
+      - name: Roll the new image out to the stable Deployment
+        run: |
+          kubectl -n fresh-cup set image deployment/fresh-cup-api \
+            api=${{ env.IMAGE }}:${{ needs.build-and-push.outputs.image_tag }}
+          kubectl -n fresh-cup rollout status deployment/fresh-cup-api --timeout=300s
+
+      - name: Scale the canary back down
+        run: |
+          kubectl -n fresh-cup annotate ingress fresh-cup-api-canary \
+            nginx.ingress.kubernetes.io/canary-weight="0" --overwrite
+          kubectl -n fresh-cup scale deployment/fresh-cup-api-canary --replicas=0

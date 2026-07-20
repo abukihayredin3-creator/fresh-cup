@@ -28,5 +28,5 @@ export function configureApp(app: INestApplication): void {
     credentials: true,
   });
 
-  app.setGlobalPrefix("api/v1", { exclude: ["health", "health/ready"] });
+  app.setGlobalPrefix("api/v1", { exclude: ["health", "health/ready", "metrics"] });
 }

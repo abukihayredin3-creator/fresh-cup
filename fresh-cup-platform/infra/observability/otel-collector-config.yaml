@@ -1,0 +1,64 @@
+# OpenTelemetry Collector config. The API currently emits correlation-ID
+# JSON logs (RequestContextService/JsonLoggerService — see
+# apps/api/src/common/observability/) rather than OTel spans: wiring the
+# full @opentelemetry/sdk-node + auto-instrumentations-node package tree
+# is a genuinely large new dependency surface, and this phase's scope
+# decision (documented in infra/k8s/README.md and the app code) is to
+# ship real, working correlation-ID tracing now and leave span-level
+# auto-instrumentation as deliberate future work rather than half-wire
+# it. This collector still earns its keep today: the `filelog` receiver
+# below tails each pod's JSON stdout, and because every line already
+# carries `traceId`, the `logs -> traces` pipeline lets you pivot from a
+# trace ID in an alert straight to every log line that shares it — real,
+# usable distributed correlation without span propagation. Point the
+# `otlp` exporter at your tracing backend (Tempo/Jaeger/etc.) once span
+# instrumentation is added; nothing else in this file needs to change.
+receivers:
+  filelog:
+    include:
+      - /var/log/pods/fresh-cup_fresh-cup-api-*/api/*.log
+    operators:
+      - type: json_parser
+        timestamp:
+          parse_from: attributes.timestamp
+          layout: "%Y-%m-%dT%H:%M:%S.%LZ"
+      - type: trace_parser
+        trace_id:
+          parse_from: attributes.traceId
+
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch: {}
+  k8sattributes:
+    extract:
+      metadata:
+        - k8s.namespace.name
+        - k8s.pod.name
+        - k8s.deployment.name
+
+exporters:
+  # Replace with your actual log backend (Loki, CloudWatch Logs, etc.)
+  # and tracing backend (Tempo, Jaeger, etc.) exporters.
+  logging:
+    verbosity: normal
+  otlp:
+    endpoint: tempo.observability.svc.cluster.local:4317
+    tls:
+      insecure: true
+
+service:
+  pipelines:
+    logs:
+      receivers: [filelog]
+      processors: [k8sattributes, batch]
+      exporters: [logging]
+    traces:
+      receivers: [otlp]
+      processors: [k8sattributes, batch]
+      exporters: [otlp]

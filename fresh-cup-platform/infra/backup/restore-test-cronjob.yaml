@@ -1,0 +1,30 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: fresh-cup-pg-restore-test
+  namespace: fresh-cup
+spec:
+  # Weekly, a few hours after the nightly backup so the same night's
+  # archive is always available to verify.
+  schedule: "0 5 * * 1"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 4
+  failedJobsHistoryLimit: 4
+  jobTemplate:
+    spec:
+      backoffLimit: 0 # a restore-test failure should alert immediately, not silently retry
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: pg-restore-test
+              image: ghcr.io/fresh-cup/fresh-cup-backup-tools:latest
+              command: ["/scripts/pg-restore-test.sh"]
+              env:
+                - name: RESTORE_TEST_DB
+                  value: "fresh_cup_restore_test"
+              envFrom:
+                - secretRef:
+                    name: fresh-cup-api-secrets # DATABASE_URL (admin-capable connection)
+                - secretRef:
+                    name: fresh-cup-backup-secrets # BACKUP_S3_*, AWS_*

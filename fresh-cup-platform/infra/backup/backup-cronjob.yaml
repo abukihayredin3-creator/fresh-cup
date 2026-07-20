@@ -1,0 +1,30 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: fresh-cup-pg-backup
+  namespace: fresh-cup
+spec:
+  # Nightly at 02:00 UTC — outside Ethiopia's typical dinner-rush write
+  # load, minimizing the chance pg_dump contends with production traffic.
+  schedule: "0 2 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 7
+  failedJobsHistoryLimit: 7
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: pg-backup
+              image: ghcr.io/fresh-cup/fresh-cup-backup-tools:latest
+              command: ["/scripts/pg-backup.sh"]
+              env:
+                - name: BACKUP_RETENTION_DAYS
+                  value: "30"
+              envFrom:
+                - secretRef:
+                    name: fresh-cup-api-secrets # DATABASE_URL
+                - secretRef:
+                    name: fresh-cup-backup-secrets # BACKUP_S3_*, AWS_*

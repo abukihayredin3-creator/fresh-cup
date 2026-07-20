@@ -1,0 +1,33 @@
+# A real weighted-canary route via ingress-nginx's canary annotations —
+# not a replica-count approximation. Start weight low (e.g. 10%), watch
+# error-rate/latency on the "track=canary" series in Grafana
+# (infra/observability/), then ratchet the weight up or delete this
+# Ingress to abort. When fully rolled out, retag the stable
+# fresh-cup-api-canary image as the new "latest" and scale this back
+# down to 0/delete it — this Ingress is a temporary rollout aid, not a
+# permanent fixture.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: fresh-cup-api-canary
+  namespace: fresh-cup
+  annotations:
+    nginx.ingress.kubernetes.io/canary: "true"
+    nginx.ingress.kubernetes.io/canary-weight: "10"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - api.freshcup.example.com
+      secretName: fresh-cup-api-tls
+  rules:
+    - host: api.freshcup.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: fresh-cup-api-canary
+                port:
+                  name: http
