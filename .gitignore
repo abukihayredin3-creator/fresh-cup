@@ -17,3 +17,13 @@ logs/*.log*
 
 .venv/
 venv/
+
+# Generated bridge artifacts — mirrors the ai_brain data/logs convention above.
+bridge/logs/*.log*
+bridge/data/*.db
+bridge/data/*.db-wal
+bridge/data/*.db-shm
+
+# MetaEditor build output (not source)
+mt5_ea/*.ex5
+mt5_ea/**/*.ex5

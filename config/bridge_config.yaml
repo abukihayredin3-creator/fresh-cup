@@ -1,0 +1,64 @@
+# MMXM MT5 bridge configuration.
+#
+# Everything the bridge's risk gate and translator need is configurable
+# here — nothing is hardcoded in bridge/ source. Edit this file and
+# restart the bridge process to apply changes.
+
+server:
+  host: "127.0.0.1"
+  port: 8000
+
+# Position sizing / stop-loss placement. The AI Brain returns ratios and
+# probabilities, never concrete price levels — the bridge turns those
+# into an actual stop_loss/take_profit using an ATR multiple, and a lot
+# size (ai_brain's own recommendation when it can compute one, otherwise
+# this default).
+risk:
+  max_risk_percent: 2.0
+  default_lot: 0.01
+  min_lot: 0.01
+  max_lot: 1.0
+  sl_atr_multiplier: 1.5
+  default_rr: 2.0
+
+# Execution gate ("Risk Manager"): a trade is only ever approved if ALL
+# of these pass, in addition to the AI Brain's own favorable/confidence
+# recommendation.
+execution:
+  confidence_threshold: 0.6
+  max_open_positions: 3
+  max_spread_points:
+    default: 25
+    EURUSD: 20
+    GBPUSD: 22
+    USDJPY: 20
+    XAUUSD: 40
+  allowed_symbols:
+    - EURUSD
+    - GBPUSD
+    - USDJPY
+    - XAUUSD
+  # Session buckets match ai_brain.utils.get_session: asian, london,
+  # london_ny_overlap, ny, off_hours.
+  allowed_sessions:
+    - london
+    - london_ny_overlap
+    - ny
+  trading_hours:
+    start: "00:00"
+    end: "23:59"
+
+news_filter:
+  enabled: true
+
+# Shared-secret required as an X-API-Key header on /predict and
+# /trade_result when non-empty. Leave empty only if the bridge stays
+# bound to 127.0.0.1/localhost (the default) — the bridge logs a
+# startup warning if server.host is changed to anything else while this
+# is empty, since /trade_result otherwise lets anyone who can reach the
+# port inject fabricated trade outcomes straight into ai_brain's
+# training data.
+security:
+  api_key: ""
+
+log_level: INFO

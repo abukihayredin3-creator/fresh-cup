@@ -1,0 +1,13 @@
+; MMXM AI Brain EA - default input preset
+; Load via MetaTrader 5: Strategy Tester or chart Inputs tab -> Load.
+; Adjust InpBridgeUrl/InpMagicNumber per instance if running multiple
+; symbols, each with its own chart/magic number.
+InpBridgeUrl=http://127.0.0.1:8000
+InpApiKey=
+InpHttpTimeoutMs=5000
+InpDecisionIntervalSec=60
+InpBarCount=100
+InpMagicNumber=20260101
+InpSlippagePoints=20
+InpMaxSpreadPointsGuard=30.0
+InpMaxOpenPositionsGuard=3

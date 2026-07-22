@@ -1,0 +1,16 @@
+# Manual news blackout windows. No live economic-calendar API is wired
+# up — add/remove windows here (from whatever calendar source you
+# already use) and the bridge will refuse to open new trades for the
+# given symbol while "now" falls inside [start_utc, end_utc].
+#
+# Times are UTC, ISO-8601. Leave the list empty to disable entirely
+# (equivalent to news_filter.enabled: false in bridge_config.yaml).
+#
+# Example:
+# blackout_windows:
+#   - symbol: "EURUSD"
+#     start_utc: "2026-02-05T12:15:00"
+#     end_utc: "2026-02-05T13:15:00"
+#     reason: "US Non-Farm Payrolls"
+
+blackout_windows: []
