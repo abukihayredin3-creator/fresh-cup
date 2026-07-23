@@ -19,7 +19,8 @@
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,yml,yaml}\" --ignore-unknown",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md,yml,yaml}\" --ignore-unknown",
     "clean": "turbo run clean && rm -rf node_modules",
-    "prepare": "cd .. && husky fresh-cup-platform/.husky || true"
+    "prepare": "cd .. && husky fresh-cup-platform/.husky || true",
+    "postinstall": "pnpm --filter @fresh-cup/api prisma:generate"
   },
   "devDependencies": {
     "@fresh-cup/config": "workspace:*",

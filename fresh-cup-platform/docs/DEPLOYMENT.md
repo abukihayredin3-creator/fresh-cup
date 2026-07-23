@@ -147,6 +147,15 @@ own `"start": "node dist/main.js"` script — so nothing in the Nest build
 config needs to change; only the deploy platform's paths need to account
 for the `fresh-cup-platform/` prefix.
 
+The Build Command's `pnpm install` already regenerates the Prisma
+Client — the root `package.json`'s `postinstall` hook
+(`pnpm --filter @fresh-cup/api prisma:generate`) runs automatically at
+the end of every install, so `nest build` never runs against a stale or
+missing client. `@prisma/client`'s own built-in postinstall generate
+step exists too but can't reliably find `apps/api/prisma/schema.prisma`
+in a pnpm workspace's isolated `node_modules` layout — this explicit
+hook is the one actually doing the work.
+
 **If a Web Service was created (or its Root Directory typed in) before
 the above, or was never re-synced to `render.yaml`**, it keeps whatever
 settings it already has — adding this file to the repo doesn't

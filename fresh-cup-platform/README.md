@@ -158,6 +158,9 @@ rather than disconnected projects.
 
 ```bash
 # From this directory (fresh-cup-platform/)
+# A root postinstall hook already runs `pnpm --filter @fresh-cup/api
+# prisma:generate` for you at the end of this step — no separate generate
+# step needed, here or after future schema changes.
 pnpm install
 
 # Start local infrastructure (Postgres, Redis, MinIO)
@@ -170,8 +173,7 @@ cp apps/admin/.env.example apps/admin/.env.local
 cp apps/delivery/.env.example apps/delivery/.env.local
 cp apps/mobile/.env.example apps/mobile/.env.local
 
-# Generate the Prisma client, then apply migrations and seed dev data
-pnpm --filter @fresh-cup/api prisma:generate
+# Apply migrations and seed dev data
 pnpm --filter @fresh-cup/api prisma:migrate
 pnpm --filter @fresh-cup/api prisma:seed
 
