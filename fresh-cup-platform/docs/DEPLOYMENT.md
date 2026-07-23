@@ -115,6 +115,45 @@ zero. Triggered by an `api-v*` tag push or manual dispatch — this is a
 documented pipeline, not something with real cluster credentials wired
 into this repo's secrets yet.
 
+## Render (simple/staging deploy)
+
+For a quick single-instance deploy (demo, staging, or before the
+Kubernetes path above is provisioned), `render.yaml` at the **repo root**
+(one level above `fresh-cup-platform/`) is a Render Blueprint for
+`apps/api`. The one thing that trips this up every time: the pnpm
+workspace root (`pnpm-workspace.yaml`, the root `package.json`) lives in
+`fresh-cup-platform/`, not the repo root, so **Render's Root Directory
+must be `fresh-cup-platform`** — the Blueprint sets this via `rootDir`.
+Without it, `pnpm install` can't find the workspace, or (if the Build
+Command happens to `cd` into place on its own but the Start Command
+doesn't) the app builds fine but fails to boot with `Cannot find module
+'.../apps/api/dist/main.js'`, because Render resolves that relative path
+against the repo root instead of `fresh-cup-platform`.
+
+If deploying by connecting the Blueprint: Render reads `render.yaml`
+automatically. If configuring a Web Service manually instead, set these
+in the dashboard:
+
+| Setting           | Value                                                                               |
+| ----------------- | ----------------------------------------------------------------------------------- |
+| Root Directory    | `fresh-cup-platform`                                                                |
+| Build Command     | `pnpm install --frozen-lockfile && pnpm turbo run build --filter=@fresh-cup/api...` |
+| Start Command     | `node apps/api/dist/main.js`                                                        |
+| Health Check Path | `/health`                                                                           |
+
+`nest build` (via `apps/api/tsconfig.build.json`, `outDir: "./dist"`)
+already emits `apps/api/dist/main.js` — matching `apps/api/package.json`'s
+own `"start": "node dist/main.js"` script — so nothing in the Nest build
+config needs to change; only the deploy platform's paths need to account
+for the `fresh-cup-platform/` prefix.
+
+Required environment variables (validated at boot by
+`common/config/env.validation.ts` — the app refuses to start without
+them): `DATABASE_URL`, `REDIS_URL`, `JWT_ACCESS_SECRET`. `PORT` is
+injected by Render automatically and already respected by `main.ts`.
+Run `prisma migrate deploy` (see the CI/CD section below) before or as
+part of first boot against a fresh database.
+
 ## CI/CD pipeline (GitHub Actions)
 
 ```mermaid

@@ -1,0 +1,36 @@
+services:
+  - type: web
+    name: fresh-cup-api
+    runtime: node
+    plan: starter
+    region: oregon
+    # The Nest app (apps/api) is a pnpm workspace package inside
+    # fresh-cup-platform/, not at the repo root — pnpm-workspace.yaml
+    # and the root package.json both live there. Root Directory MUST be
+    # set to fresh-cup-platform so `pnpm install` finds the workspace and
+    # so Start Command's relative path resolves correctly; without it,
+    # Render looks for apps/api/dist/main.js directly under the repo
+    # root, where it doesn't exist ("Cannot find module
+    # .../src/apps/api/dist/main.js").
+    rootDir: fresh-cup-platform
+    buildCommand: pnpm install --frozen-lockfile && pnpm turbo run build --filter=@fresh-cup/api...
+    # nest build (tsconfig.build.json -> outDir "./dist") emits
+    # apps/api/dist/main.js — matches apps/api/package.json's own
+    # "start": "node dist/main.js" script, run here from rootDir so the
+    # path is apps/api/dist/main.js rather than just dist/main.js.
+    startCommand: node apps/api/dist/main.js
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: NODE_ENV
+        value: production
+      # Render injects PORT automatically; apps/api/src/main.ts already
+      # reads it via ConfigService (PORT defaults to 4000 otherwise).
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: JWT_ACCESS_SECRET
+        sync: false
