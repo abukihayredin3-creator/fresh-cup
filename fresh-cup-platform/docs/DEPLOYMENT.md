@@ -147,6 +147,21 @@ own `"start": "node dist/main.js"` script — so nothing in the Nest build
 config needs to change; only the deploy platform's paths need to account
 for the `fresh-cup-platform/` prefix.
 
+**If a Web Service was created (or its Root Directory typed in) before
+the above, or was never re-synced to `render.yaml`**, it keeps whatever
+settings it already has — adding this file to the repo doesn't
+retroactively update an existing service. A service with a blank Root
+Directory still runs the Start Command from the repo root, one level
+above `fresh-cup-platform`, where `apps/api/dist/main.js` doesn't exist.
+Rather than depend on that dashboard field being correct,
+`apps/api/package.json`'s `postbuild` script
+(`apps/api/scripts/write-render-start-shim.js`) writes a one-line
+forwarding `apps/api/dist/main.js` at the repo root too, every build, so
+`node apps/api/dist/main.js` boots the app correctly whichever directory
+Render actually treats as its working directory — no dashboard change
+required. It's gitignored (`/apps/api/dist/` in the repo-root
+`.gitignore`) — a build artifact, not source.
+
 Required environment variables (validated at boot by
 `common/config/env.validation.ts` — the app refuses to start without
 them): `DATABASE_URL`, `REDIS_URL`, `JWT_ACCESS_SECRET`. `PORT` is

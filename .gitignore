@@ -17,3 +17,8 @@ logs/*.log*
 
 .venv/
 venv/
+
+# apps/api/scripts/write-render-start-shim.js generates this after every
+# `pnpm build` in fresh-cup-platform/apps/api — a Render Start Command
+# compatibility forwarder, not source.
+/apps/api/dist/

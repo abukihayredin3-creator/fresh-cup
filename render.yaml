@@ -6,18 +6,30 @@ services:
     region: oregon
     # The Nest app (apps/api) is a pnpm workspace package inside
     # fresh-cup-platform/, not at the repo root — pnpm-workspace.yaml
-    # and the root package.json both live there. Root Directory MUST be
+    # and the root package.json both live there. Root Directory should be
     # set to fresh-cup-platform so `pnpm install` finds the workspace and
-    # so Start Command's relative path resolves correctly; without it,
-    # Render looks for apps/api/dist/main.js directly under the repo
-    # root, where it doesn't exist ("Cannot find module
-    # .../src/apps/api/dist/main.js").
+    # so Start Command's relative path resolves correctly.
     rootDir: fresh-cup-platform
     buildCommand: pnpm install --frozen-lockfile && pnpm turbo run build --filter=@fresh-cup/api...
     # nest build (tsconfig.build.json -> outDir "./dist") emits
     # apps/api/dist/main.js — matches apps/api/package.json's own
     # "start": "node dist/main.js" script, run here from rootDir so the
     # path is apps/api/dist/main.js rather than just dist/main.js.
+    #
+    # A Web Service that was created/configured BEFORE this file existed
+    # (or one that was never re-synced to it) keeps whatever Root
+    # Directory/Start Command it already has in the Render dashboard —
+    # adding this file does not retroactively change an existing
+    # service's settings. If that dashboard Root Directory is blank, the
+    # Start Command above resolves from the outer repo root instead of
+    # fresh-cup-platform, where apps/api/dist/main.js doesn't exist
+    # ("Cannot find module .../src/apps/api/dist/main.js"). Rather than
+    # depend on that dashboard field being correct,
+    # apps/api/package.json's postbuild script
+    # (scripts/write-render-start-shim.js) writes a matching
+    # apps/api/dist/main.js at the outer repo root too, every build, so
+    # this exact Start Command works either way without needing to be
+    # changed.
     startCommand: node apps/api/dist/main.js
     healthCheckPath: /health
     autoDeploy: true

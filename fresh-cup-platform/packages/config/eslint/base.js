@@ -37,7 +37,13 @@ module.exports = tseslint.config(
     // Node, not the app's own runtime — they need `module`/`require` in scope,
     // and `require()` itself is the correct, idiomatic way to load them.
     // packages/config is entirely such tooling code, regardless of filename.
-    files: ["**/*.config.js", "**/*.config.cjs", "eslint.config.js", "packages/config/**/*.js"],
+    files: [
+      "**/*.config.js",
+      "**/*.config.cjs",
+      "eslint.config.js",
+      "packages/config/**/*.js",
+      "**/scripts/**/*.js",
+    ],
     languageOptions: {
       globals: globals.node,
     },
