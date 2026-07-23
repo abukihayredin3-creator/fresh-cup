@@ -303,32 +303,36 @@ model Branch {
   createdAt      DateTime     @default(now()) @map("created_at")
   updatedAt      DateTime     @updatedAt @map("updated_at")
 
-  users                  User[]
-  menuCategories         MenuCategory[]
-  menuItems              MenuItem[]
-  inventoryItems         InventoryItem[]
-  tables                 Table[]
-  modifierGroups         ModifierGroup[]
-  carts                  Cart[]
-  orders                 Order[]
-  kitchenStations        KitchenStation[]
-  deliveryZones          DeliveryZone[]
-  deliveries             Delivery[]
-  suppliers              Supplier[]
-  purchaseOrders         PurchaseOrder[]
-  hours                  BranchHours[]
-  departments            Department[]
-  shifts                 Shift[]
-  attendances            Attendance[]
-  banners                Banner[]
-  forecastSnapshots      ForecastSnapshot[]
-  aiMemoryEntries        AiMemoryEntry[]
-  aiApprovalRequests     AiApprovalRequest[]
-  branchGroupMemberships BranchGroupMembership[]
-  featureFlagOverrides   FeatureFlagOverride[]
-  aiInsights             AiInsight[]
-  aiMemories             AiMemory[]
-  aiRecommendations      AiRecommendation[]
+  users                   User[]
+  menuCategories          MenuCategory[]
+  menuItems               MenuItem[]
+  inventoryItems          InventoryItem[]
+  tables                  Table[]
+  modifierGroups          ModifierGroup[]
+  carts                   Cart[]
+  orders                  Order[]
+  kitchenStations         KitchenStation[]
+  deliveryZones           DeliveryZone[]
+  deliveries              Delivery[]
+  suppliers               Supplier[]
+  purchaseOrders          PurchaseOrder[]
+  hours                   BranchHours[]
+  departments             Department[]
+  shifts                  Shift[]
+  attendances             Attendance[]
+  banners                 Banner[]
+  forecastSnapshots       ForecastSnapshot[]
+  aiMemoryEntries         AiMemoryEntry[]
+  aiApprovalRequests      AiApprovalRequest[]
+  branchGroupMemberships  BranchGroupMembership[]
+  featureFlagOverrides    FeatureFlagOverride[]
+  aiInsights              AiInsight[]
+  aiMemories              AiMemory[]
+  aiRecommendations       AiRecommendation[]
+  executiveBriefings      ExecutiveBriefing[]
+  businessHealthSnapshots BusinessHealthSnapshot[]
+  executiveAlerts         ExecutiveAlert[]
+  executiveSummaries      ExecutiveSummary[]
 
   @@index([managerId])
   @@index([organizationId])
@@ -1915,6 +1919,10 @@ model Organization {
   aiMemories                AiMemory[]
   aiRecommendations         AiRecommendation[]
   aiDecisions               AiDecision[]
+  executiveBriefings        ExecutiveBriefing[]
+  businessHealthSnapshots   BusinessHealthSnapshot[]
+  executiveAlerts           ExecutiveAlert[]
+  executiveSummaries        ExecutiveSummary[]
 
   @@map("organizations")
 }
@@ -2529,4 +2537,129 @@ model AiLearningEvent {
 
   @@index([recommendationId])
   @@map("ai_learning_events")
+}
+
+// ============================================================
+// Phase 9 Task 2 — AI CEO Copilot
+// ============================================================
+// A new apps/api/src/modules/ai-copilot/ tree layered ON TOP of the AI
+// Brain (above) and the existing analytics/inventory-intelligence
+// services — it deliberately computes nothing those already compute
+// (revenue/profit/COGS: modules/intelligence/executive/ExecutiveService;
+// stockout-day predictions: modules/intelligence/inventory-intelligence/
+// InventoryIntelligenceService; recommendations/decisions/forecasts: the
+// AI Brain above), it only assembles, scores, and narrates them for an
+// executive audience. `AiPriority` (already defined above) is reused for
+// `riskLevel`/`severity` rather than a duplicate 4-value enum.
+
+/// Direction of a BusinessHealthSnapshot's overallScore versus the
+/// previous snapshot for the same organization/branch.
+enum HealthTrend {
+  IMPROVING
+  STABLE
+  DECLINING
+}
+
+/// Lifecycle of an ExecutiveAlert as an owner/manager triages it.
+enum ExecutiveAlertStatus {
+  ACTIVE
+  RESOLVED
+  DISMISSED
+}
+
+/// Morning Executive Briefing — a persisted snapshot of
+/// ExecutiveBriefingService's assembled output (revenue/profit summary,
+/// top/bottom products, inventory/staffing alerts, ranked AI
+/// recommendations) for one organization/branch/day. Historical rows are
+/// kept (not upserted) so a briefing can be looked back on later exactly
+/// as it read that morning.
+model ExecutiveBriefing {
+  id                String       @id @default(uuid())
+  organizationId    String       @map("organization_id")
+  organization      Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  branchId          String?      @map("branch_id")
+  branch            Branch?      @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  briefingDate      DateTime     @map("briefing_date")
+  revenueSummary    Json         @map("revenue_summary")
+  profitSummary     Json         @map("profit_summary")
+  topProducts       Json         @map("top_products")
+  bottomProducts    Json         @map("bottom_products")
+  inventoryAlerts   Json         @map("inventory_alerts")
+  staffingAlerts    Json         @map("staffing_alerts")
+  aiRecommendations Json         @map("ai_recommendations")
+  riskLevel         AiPriority   @map("risk_level")
+  confidenceScore   Float        @map("confidence_score")
+  createdAt         DateTime     @default(now()) @map("created_at")
+
+  @@index([organizationId, branchId, briefingDate])
+  @@map("executive_briefings")
+}
+
+/// BusinessHealthService's weighted 0-100 score across Revenue / Profit /
+/// Inventory / Customer / Operations / Staff, stored historically so
+/// `trend` can compare against the immediately preceding snapshot for the
+/// same organization/branch.
+model BusinessHealthSnapshot {
+  id              String       @id @default(uuid())
+  organizationId  String       @map("organization_id")
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  branchId        String?      @map("branch_id")
+  branch          Branch?      @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  overallScore    Float        @map("overall_score")
+  revenueScore    Float        @map("revenue_score")
+  profitScore     Float        @map("profit_score")
+  inventoryScore  Float        @map("inventory_score")
+  customerScore   Float        @map("customer_score")
+  operationsScore Float        @map("operations_score")
+  staffScore      Float        @map("staff_score")
+  trend           HealthTrend  @default(STABLE)
+  createdAt       DateTime     @default(now()) @map("created_at")
+
+  @@index([organizationId, branchId, createdAt])
+  @@map("business_health_snapshots")
+}
+
+/// AnomalyDetectionService's output — an unusual, evidenced business
+/// event (revenue drop, orders unusually low, waste unusually high,
+/// inventory mismatch, customer complaint spike, ...). `type` is a
+/// free-form category tag (e.g. "REVENUE_DROP"), matching the AI Brain's
+/// `AiMemory.memoryType` convention rather than a closed enum, since new
+/// anomaly categories are expected to be added over time.
+model ExecutiveAlert {
+  id                String               @id @default(uuid())
+  organizationId    String               @map("organization_id")
+  organization      Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  branchId          String?              @map("branch_id")
+  branch            Branch?              @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  type              String
+  severity          AiPriority
+  confidence        Float
+  evidence          Json
+  recommendedAction String               @map("recommended_action")
+  status            ExecutiveAlertStatus @default(ACTIVE)
+  createdAt         DateTime             @default(now()) @map("created_at")
+
+  @@index([organizationId, branchId, status])
+  @@index([organizationId, type])
+  @@map("executive_alerts")
+}
+
+/// ExecutiveSummaryService's output — a short, template/rule-generated
+/// (never LLM-generated, per Phase 9's "no fake AI" principle) natural
+/// -language paragraph for a given period ("day"/"week"), plus the
+/// structured `keyMetrics` the template was built from so the prose can
+/// always be traced back to real numbers.
+model ExecutiveSummary {
+  id             String       @id @default(uuid())
+  organizationId String       @map("organization_id")
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  branchId       String?      @map("branch_id")
+  branch         Branch?      @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  period         String
+  content        String
+  keyMetrics     Json         @map("key_metrics")
+  createdAt      DateTime     @default(now()) @map("created_at")
+
+  @@index([organizationId, branchId, createdAt])
+  @@map("executive_summaries")
 }

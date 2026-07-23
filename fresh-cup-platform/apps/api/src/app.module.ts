@@ -15,6 +15,7 @@ import { EnterpriseModule } from "./enterprise/enterprise.module";
 import { AiIntelligenceModule } from "./intelligence/ai-intelligence.module";
 import { AddressesModule } from "./modules/addresses/addresses.module";
 import { AiBrainModule } from "./modules/ai-brain/ai-brain.module";
+import { AiCopilotModule } from "./modules/ai-copilot/ai-copilot.module";
 import { AnalyticsModule } from "./modules/analytics/analytics.module";
 import { AuditModule } from "./modules/audit/audit.module";
 import { AuthModule } from "./modules/auth/auth.module";
@@ -63,6 +64,7 @@ import { WebsocketsModule } from "./websockets/websockets.module";
     UsersModule,
     AddressesModule,
     AiBrainModule,
+    AiCopilotModule,
     BranchesModule,
     CatalogModule,
     InventoryModule,

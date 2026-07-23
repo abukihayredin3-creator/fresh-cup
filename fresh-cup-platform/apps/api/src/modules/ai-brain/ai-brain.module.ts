@@ -27,6 +27,11 @@ import { RecommendationEngineService } from "./services/recommendation-engine.se
  * only other place a controller uses this guard directly) a module using
  * the guard itself, not just TenantContextService, needs it alongside
  * TenancyModule.
+ *
+ * `AiBrainTenantScopeService` is exported (not just an internal provider)
+ * so Phase 9 Task 2's ai-copilot module can import this module and reuse
+ * the same branch-belongs-to-organization check rather than duplicating
+ * it.
  */
 @Module({
   imports: [TenancyModule, IpAllowlistModule],
@@ -42,6 +47,7 @@ import { RecommendationEngineService } from "./services/recommendation-engine.se
     LearningEngineService,
   ],
   exports: [
+    AiBrainTenantScopeService,
     MemoryEngineService,
     PredictionEngineService,
     ReasoningEngineService,

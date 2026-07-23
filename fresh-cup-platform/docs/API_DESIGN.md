@@ -773,6 +773,33 @@ as every other admin-facing controller.
 | POST   | `/ai-brain/decision`  | body `{ branchId? }` — combines a fresh sales forecast, the sales reasoning baseline, and every current recommendation into a priority-sorted `AiDecision[]`                                 |
 | POST   | `/ai-brain/learning`  | body `{ recommendationId, result, feedback }` — records an `AiLearningEvent`; a `result` of `accepted`/`rejected`/`implemented` (case-insensitive) also advances the recommendation's status |
 
+## AI CEO Copilot (Phase 13 Task 2)
+
+Every route below lives under `/ai-copilot/*`. Same guard/role stack as
+`/ai-brain/*` (`TenantContextGuard` + `@Roles(MANAGER, ADMIN)`), plus an
+`AiCopilotScopeService` that resolves the caller's branch scope once —
+never leaving `branchId` undefined for an ADMIN actor when calling the
+pre-tenancy `ExecutiveService`/`InventoryIntelligenceService`, and
+restricting MANAGER/STAFF to their own branch, same as those services do
+internally. Every handler is GET (the module only reads and assembles —
+it recomputes nothing that `ExecutiveService` (Phase 8 Part 4),
+`InventoryIntelligenceService` (Phase 8 Part 4), or the AI Brain engines
+(Phase 13 Task 1) already compute), but several persist a new snapshot
+row as a side effect (a health check writes `BusinessHealthSnapshot`, a
+briefing writes `ExecutiveBriefing`, ...), so those are tagged
+`@Auditable(entityType, { auditReads: true })` — an opt-in extension of
+the existing `Auditable`/`AuditLogInterceptor` mechanism (originally
+GET-exempt) rather than a new one.
+
+| Method | Path                          | Notes                                                                                                                                                                                                                              |
+| ------ | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/ai-copilot/dashboard`       | `?branchId=` — single payload: overview/KPIs (from `ExecutiveService.overview`), health score, active `ExecutiveAlert`s, ranked AI recommendations, AI Brain predictions, priority `AiDecision`s                                   |
+| GET    | `/ai-copilot/briefing`        | `?branchId=` — generates and persists an `ExecutiveBriefing`: revenue/profit summary, top/bottom products, inventory alerts, staffing alerts (demand-vs-shift-coverage, computed here), AI recommendations, risk level, confidence |
+| GET    | `/ai-copilot/health`          | `?branchId=` — generates and persists a `BusinessHealthSnapshot`: weighted 0-100 score across Revenue/Profit/Inventory/Customer/Operations/Staff, trend vs. the prior snapshot                                                     |
+| GET    | `/ai-copilot/alerts`          | `?branchId=` — runs anomaly detection (revenue drop, orders low, waste high, inventory mismatch, complaint spike) and persists any new `ExecutiveAlert`s                                                                           |
+| GET    | `/ai-copilot/recommendations` | `?branchId=` — merges and ranks recommendations from the AI Brain, `ExecutiveService`'s marketing/waste figures, the AI Brain's demand-forecast decisions, and `InventoryIntelligenceService`'s suggested reorders                 |
+| GET    | `/ai-copilot/summary`         | `?branchId=&period=day\|week` — generates and persists an `ExecutiveSummary`: a template/rule-built (no LLM) natural-language paragraph plus its `keyMetrics`                                                                      |
+
 ## Audit logs (Phase 3)
 
 An `@Auditable(entityType)` decorator + a global interceptor write one

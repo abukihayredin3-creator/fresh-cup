@@ -1,5 +1,6 @@
 import { ApiClient, type ApiClientOptions } from "./client";
 import { AddressesResource } from "./resources/addresses";
+import { AdminAiCopilotResource } from "./resources/admin/ai-copilot";
 import { AdminAiStudioResource } from "./resources/admin/ai-studio";
 import { AdminAnalyticsResource } from "./resources/admin/analytics";
 import { AdminAuditResource } from "./resources/admin/audit";
@@ -32,6 +33,7 @@ import { UsersResource } from "./resources/users";
 export * from "./client";
 export * from "./query";
 export * from "./resources/addresses";
+export * from "./resources/admin/ai-copilot";
 export * from "./resources/admin/ai-studio";
 export * from "./resources/admin/analytics";
 export * from "./resources/admin/audit";
@@ -67,6 +69,7 @@ export * from "./resources/users";
  * calls an `admin/*` (or account-security) backend route.
  */
 export interface FreshCupAdminApiClient {
+  aiCopilot: AdminAiCopilotResource;
   settings: AdminSettingsResource;
   audit: AdminAuditResource;
   branches: AdminBranchesResource;
@@ -122,6 +125,7 @@ export function createFreshCupClient(options: ApiClientOptions): FreshCupApiClie
     security: new SecurityResource(raw),
     recommendations: new RecommendationsResource(raw),
     admin: {
+      aiCopilot: new AdminAiCopilotResource(raw),
       settings: new AdminSettingsResource(raw),
       audit: new AdminAuditResource(raw),
       branches: new AdminBranchesResource(raw),

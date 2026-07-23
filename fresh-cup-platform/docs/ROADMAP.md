@@ -927,7 +927,7 @@ eight new Enterprise routes.
   Kubernetes + blue/green/canary + CI/CD + disaster-recovery pipeline —
   all without touching any existing Phase 1–11 endpoint or table.
 
-## Phase 13 — AI Restaurant Operating System ✅ (Task 1)
+## Phase 13 — AI Restaurant Operating System ✅ (Tasks 1–2)
 
 Numbered 13 (not 9) deliberately — "Phase 9 — Scale & hardening" above is a
 distinct, still-unbuilt future phase (load testing, read replicas,
@@ -1015,6 +1015,107 @@ real bug: `TenantContextGuard`'s `IpAllowlistService` dependency needs
 `IpAllowlistModule` imported directly alongside `TenancyModule`, not just
 transitively — the same class of DI-graph gap Phase 12's boot test caught
 for `IpAllowlistModule` itself).
+
+### Task 2: AI CEO Copilot
+
+- New `apps/api/src/modules/ai-copilot/` — a thin aggregation/scoring
+  layer over Task 1's AI Brain engines and the pre-existing
+  `ExecutiveService`/`InventoryIntelligenceService` (Phase 8 Part 4).
+  Every service docblocks exactly what it reuses vs. what it computes
+  fresh; nothing here recomputes revenue, profit, COGS, marketing ROI, or
+  stockout predictions — those numbers all come from the services that
+  already own them
+- New models: `ExecutiveBriefing`, `BusinessHealthSnapshot`,
+  `ExecutiveAlert`, `ExecutiveSummary` (+ `HealthTrend`/
+  `ExecutiveAlertStatus` enums, reusing Task 1's `AiPriority` rather than
+  a duplicate priority enum) — historical snapshots, not upserted, so a
+  past briefing or health check reads exactly as it did that day
+- **`AiCopilotScopeService`**: the shared tenant/branch-scoping gate every
+  other service in this module calls first. Combines the real tenant
+  isolation `AiBrainTenantScopeService` (Task 1) already provides with
+  the actor-role branch restriction `ExecutiveService`/
+  `InventoryIntelligenceService` enforce internally (MANAGER/STAFF forced
+  to their own branch) — replicated here so a resolved `branchId` is
+  never silently re-scoped downstream, and an ADMIN actor never leaves
+  `branchId` undefined against those pre-tenancy services (which have no
+  native `organizationId` scoping of their own)
+- **Morning Executive Briefing** (`ExecutiveBriefingService`): revenue/
+  profit summary, top/bottom products, and inventory alerts assembled
+  from `ExecutiveService.overview`/`InventoryIntelligenceService`; AI
+  recommendations from the AI Brain's `RecommendationEngineService`; risk
+  level from `AnomalyDetectionService`. Staffing alerts (demand vs. shift
+  coverage, day by day) are the one genuinely new computation
+- **Business Health Score** (`BusinessHealthService`): a weighted 0-100
+  score across Revenue/Profit/Inventory/Customer/Operations/Staff, each
+  category built from an existing signal (the Reasoning Engine's sales
+  and customer trends, `ExecutiveService`'s inventory costs,
+  `InventoryIntelligenceService`'s stockout predictions) except a new
+  staff no-show ratio (`Shift.MISSED` count). Trend compares against the
+  immediately preceding `BusinessHealthSnapshot`
+- **Anomaly Detection** (`AnomalyDetectionService`): revenue drop and
+  orders-unusually-low reuse the Reasoning Engine's sales signal; waste
+  cost trend, inventory-mismatch frequency
+  (`MANUAL_ADJUSTMENT`-transaction rate), and customer-complaint spike
+  (`ProductReview` low-rating trend) are new trailing-window
+  computations, each persisted as an `ExecutiveAlert` with
+  severity/confidence/evidence/recommended action
+- **Executive Dashboard** (`ExecutiveDashboardService`): the single
+  "everything an executive needs" payload — every section pulled from an
+  existing service's output (overview/KPIs, health score, active alerts,
+  AI recommendations, AI Brain predictions, priority `AiDecision`s), read
+  -only, nothing recomputed
+- **Recommendation Prioritization** (`RecommendationPriorityService`):
+  merges and ranks recommendations from four sources — the AI Brain's own
+  `RecommendationEngineService`, the AI Brain's `DecisionEngineService`
+  filtered to its `DEMAND_FORECAST` decisions only (deliberately
+  excluding its `RECOMMENDATION_ACTION` decisions, since those are just
+  `decide()`'s own re-wrap of `generate()`'s output, already pulled
+  separately — avoiding a literal duplicate), `ExecutiveService`'s
+  marketing-ROI/waste-ratio figures, and `InventoryIntelligenceService`'s
+  suggested reorders
+- **Natural Executive Summary** (`ExecutiveSummaryService`): a short,
+  template/business-rule-generated paragraph — never an LLM, per this
+  phase's "no fake AI" principle applied literally to a feature whose
+  spec explicitly called for rule-based text. Every sentence reuses an
+  existing signal (revenue change from the Reasoning Engine, the demand
+  sentence from the AI Brain's `DEMAND_FORECAST` decision, the top action
+  from `RecommendationPriorityService`); inventory-cost change (two
+  `ExecutiveService.overview` calls, current vs. prior window) is the one
+  new computation
+- `GET /ai-copilot/dashboard`, `/briefing`, `/health`, `/alerts`,
+  `/recommendations`, `/summary` — all behind `TenantContextGuard` +
+  `@Roles(MANAGER, ADMIN)`; several are `@Auditable(entityType,
+{ auditReads: true })`, a new opt-in extension to the `Auditable`
+  decorator (originally GET-exempt) that lets a read endpoint with a real
+  persisting side effect (a new snapshot row) get audited without
+  changing the default behavior of any other `@Auditable(...)` call site
+  in the codebase
+- New `apps/admin` Executive Dashboard page (`/ai-copilot`) — health
+  score, KPIs, active alerts, AI recommendations, forecasts, and recent
+  AI decisions, all from the single `GET /ai-copilot/dashboard` payload,
+  plus the natural-language executive summary as a banner; modeled on
+  Phase 12 Part 4's `enterprise/analytics` single-page pattern
+- **Bug found and fixed along the way:** `ExecutiveService.resolveRange`
+  (Phase 8 Part 4, unmodified) parses a date-only `to` string to that
+  day's UTC midnight, silently excluding same-day activity from a `<=`
+  comparison. Every ai-copilot call site now passes full
+  `.toISOString()` timestamps instead of date-only strings — a fix to
+  how this module _calls_ `ExecutiveService`, not to `ExecutiveService`
+  itself
+- **Exit criteria (Task 2):** an executive can load one dashboard and see
+  a real health score, real active alerts, a real ranked recommendation
+  list drawing from four independent sources, real forecasts, and real
+  priority actions — every number traceable to an existing service, nothing
+  fabricated — with the same tenant isolation guarantees as every other
+  Phase 12/13 endpoint.
+
+49 new unit tests (scope service, business health, anomaly detection,
+executive briefing, recommendation priority, executive dashboard,
+executive summary) plus 9 e2e tests (all six endpoints, RBAC,
+cross-tenant isolation, and the new `auditReads` GET-audit behavior) —
+bringing the API suite to 815 unit + 155 e2e tests; typecheck/lint clean,
+a full Nest app boot verifying `AiCopilotModule` resolves in the DI graph
+against the newly-exported `AiBrainTenantScopeService`.
 
 ## Sequencing notes
 

@@ -1,3 +1,4 @@
+export * from "./ai-copilot";
 export * from "./ai-studio";
 export * from "./analytics";
 export * from "./audit";

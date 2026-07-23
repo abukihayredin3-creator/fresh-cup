@@ -151,6 +151,7 @@ module (e.g., Notifications) becomes a bottleneck.
 - **Branches** — restaurant locations (one today, extensible)
 - **Enterprise & Global Restaurant Platform** (Phase 12, `apps/api/src/enterprise`) — a new tenant root (`Organization`) sitting ABOVE `Branch`, multi-tenant RBAC, SSO/SCIM/WebAuthn, multi-currency/tax/localization, and cross-branch analytics — see §6e
 - **AI Restaurant Operating System** (Phase 13 Task 1, `apps/api/src/modules/ai-brain`) — a rule-based memory → reasoning → prediction → recommendation → decision → learning loop, org/branch-scoped via §6e's tenancy guard, deliberately separate from every other intelligence tree above — see §6f
+- **AI CEO Copilot** (Phase 13 Task 2, `apps/api/src/modules/ai-copilot`) — a read-only aggregation/scoring layer over §6f's AI Brain and §6a/§6e's `ExecutiveService`/`InventoryIntelligenceService`: a morning briefing, a weighted business health score, anomaly detection, a single executive dashboard, ranked cross-source recommendations, and a template-generated natural-language summary — see §6g
 
 Modules communicate in-process via an internal event bus (Nest
 `EventEmitter`) for cross-cutting concerns — e.g., `order.paid` triggers
@@ -519,6 +520,81 @@ literal `AI` casing from planning. `AiMemory` and `AiLearningEvent` are
 deliberately distinct from §6b's `AiMemoryEntry` (RAG-backed conversational
 memory) and `AiRecommendationOutcome` (that tree's own outcome tracking) —
 same concept, non-overlapping data, no shared table.
+
+### 6g. AI CEO Copilot (Phase 13 Task 2)
+
+A new `apps/api/src/modules/ai-copilot/` tree — deliberately a thin
+aggregation/scoring layer, not a new intelligence tree of its own. Every
+service docblocks exactly what it reuses vs. what it computes fresh: §6f's
+AI Brain engines (`ReasoningEngineService`, `PredictionEngineService`,
+`RecommendationEngineService`, `DecisionEngineService`) and §6a/§6e's
+`ExecutiveService`/`InventoryIntelligenceService` supply every revenue,
+profit, COGS, marketing-ROI, and stockout-prediction number; nothing in
+this module recomputes them.
+
+**Scoping.** `AiCopilotScopeService` is the gate every other service here
+calls first. It combines two things that don't otherwise compose safely:
+§6f's `AiBrainTenantScopeService.resolveBranchIds()` (real
+`organizationId`-scoped tenant isolation) and the actor-role branch
+restriction `ExecutiveService`/`InventoryIntelligenceService` already
+enforce internally (a MANAGER/STAFF actor is silently re-scoped to their
+own branch regardless of what `branchId` they pass). Replicating that
+restriction here means a resolved `branchId` is never silently
+overridden downstream, and — since neither pre-tenancy service has its
+own `organizationId` scoping — an ADMIN actor's `branchId` is never left
+`undefined` against them (which would read across the whole table, not
+just this tenant).
+
+**The six features**, each backed by one service:
+
+- `ExecutiveBriefingService` — a morning briefing (`ExecutiveBriefing`):
+  revenue/profit/top-bottom-products/inventory-alerts from
+  `ExecutiveService`/`InventoryIntelligenceService`, AI recommendations
+  from `RecommendationEngineService`, risk level from
+  `AnomalyDetectionService`. Staffing alerts (demand vs. shift coverage)
+  are the one new computation.
+- `BusinessHealthService` — a weighted 0-100 score
+  (`BusinessHealthSnapshot`) across Revenue/Profit/Inventory/Customer/
+  Operations/Staff, each category built from an existing signal except a
+  new staff no-show ratio (`Shift.MISSED` count). Trend compares against
+  the prior snapshot for the same org/branch.
+- `AnomalyDetectionService` — revenue-drop and orders-low reuse the
+  Reasoning Engine's sales signal; waste-cost trend, inventory-mismatch
+  frequency, and customer-complaint spike are new trailing-window
+  computations, each persisted as an `ExecutiveAlert`.
+- `ExecutiveDashboardService` — the single aggregated payload
+  (overview/KPIs, health score, active alerts, AI recommendations,
+  predictions, priority actions), entirely read-only assembly of the
+  other five services' output.
+- `RecommendationPriorityService` — merges and ranks four sources:
+  `RecommendationEngineService`, `DecisionEngineService` filtered to its
+  `DEMAND_FORECAST` decisions only (its `RECOMMENDATION_ACTION`
+  decisions are `decide()`'s own re-wrap of `generate()`'s output,
+  already pulled separately — including both would double-count the same
+  recommendation), `ExecutiveService`'s marketing/waste figures, and
+  `InventoryIntelligenceService`'s suggested reorders.
+- `ExecutiveSummaryService` — a short natural-language paragraph built
+  from string templates and numeric thresholds, never an LLM (this
+  phase's "no fake AI" principle applied literally, since this feature's
+  spec called for rule-based text specifically). Inventory-cost change
+  (`ExecutiveService.overview` over two windows) is the one new
+  computation; every other sentence reuses an existing signal.
+
+**A bug this module's tests found, in code it doesn't own.**
+`ExecutiveService.resolveRange` (§6a, unmodified) does
+`new Date(to)` — a date-only string parses to that day's UTC midnight, so
+a `<=` comparison silently excludes same-day activity. Every call site in
+this module now passes full `.toISOString()` timestamps instead of the
+AI Brain's `toDateKey()` date-only strings.
+
+**Audit.** Several endpoints are read-only in HTTP-verb terms but persist
+a new snapshot row as a side effect. Rather than defaulting every GET to
+audited (which would spam the audit log with every dashboard poll), the
+`Auditable` decorator gained an opt-in `{ auditReads: true }` option
+(`AUDIT_INCLUDE_READS_KEY`, checked alongside the existing
+mutating-methods check in `AuditLogInterceptor`) — every other
+`@Auditable(...)` call site in the codebase keeps its original
+GET-exempt behavior unchanged.
 
 ## 7. API architecture
 

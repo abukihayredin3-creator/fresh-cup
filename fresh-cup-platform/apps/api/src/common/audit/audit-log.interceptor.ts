@@ -12,7 +12,7 @@ import type { Observable } from "rxjs";
 import { tap } from "rxjs/operators";
 import { PrismaService } from "../../database/prisma.service";
 import type { RequestUser } from "../types/request-user.interface";
-import { AUDIT_ENTITY_TYPE_KEY } from "./auditable.decorator";
+import { AUDIT_ENTITY_TYPE_KEY, AUDIT_INCLUDE_READS_KEY } from "./auditable.decorator";
 
 const MUTATING_METHODS = new Set(["POST", "PATCH", "PUT", "DELETE"]);
 
@@ -41,7 +41,13 @@ export class AuditLogInterceptor implements NestInterceptor {
     }
 
     const request = context.switchToHttp().getRequest<Request>();
-    if (!MUTATING_METHODS.has(request.method)) {
+    const includeReads = this.reflector.getAllAndOverride<boolean | undefined>(
+      AUDIT_INCLUDE_READS_KEY,
+      [context.getHandler(), context.getClass()],
+    );
+    const isAuditable =
+      MUTATING_METHODS.has(request.method) || (includeReads === true && request.method === "GET");
+    if (!isAuditable) {
       return next.handle();
     }
 
