@@ -1,7 +1,13 @@
 import type { INestApplication } from "@nestjs/common";
 import request from "supertest";
 import type { PrismaService } from "../src/database/prisma.service";
-import { createTestBranch, createTestUser, loginAs } from "./utils/fixtures";
+import {
+  createTestBranch,
+  createTestCategory,
+  createTestMenuItem,
+  createTestUser,
+  loginAs,
+} from "./utils/fixtures";
 import { createTestApp } from "./utils/test-app";
 
 describe("Catalog (e2e)", () => {
@@ -240,6 +246,116 @@ describe("Catalog (e2e)", () => {
         .expect(200);
 
       expect(secondPage.body.items).toHaveLength(1);
+    });
+  });
+
+  describe("Flat /menu routes (no auth, branch resolved automatically)", () => {
+    it("GET /menu returns categories and available items for an explicit branchId", async () => {
+      const branch = await createTestBranch(prisma);
+      const category = await createTestCategory(prisma, branch.id);
+      const available = await createTestMenuItem(prisma, branch.id, category.id, {
+        nameEn: "Visible Smoothie",
+      });
+      await createTestMenuItem(prisma, branch.id, category.id, {
+        nameEn: "Hidden Smoothie",
+        isAvailable: false,
+      });
+
+      const response = await request(app.getHttpServer())
+        .get(`/api/v1/menu?branchId=${branch.id}`)
+        .expect(200);
+
+      expect(response.body.branchId).toBe(branch.id);
+      expect(response.body.categories).toEqual(
+        expect.arrayContaining([expect.objectContaining({ id: category.id })]),
+      );
+      expect(response.body.items).toEqual(
+        expect.arrayContaining([expect.objectContaining({ id: available.id })]),
+      );
+      expect(response.body.items).not.toEqual(
+        expect.arrayContaining([expect.objectContaining({ nameEn: "Hidden Smoothie" })]),
+      );
+    });
+
+    it("GET /menu requires no authentication", async () => {
+      const branch = await createTestBranch(prisma);
+
+      await request(app.getHttpServer()).get(`/api/v1/menu?branchId=${branch.id}`).expect(200);
+    });
+
+    it("GET /menu falls back to the platform's first active branch when branchId is omitted", async () => {
+      const response = await request(app.getHttpServer()).get("/api/v1/menu").expect(200);
+
+      expect(response.body).toEqual(
+        expect.objectContaining({
+          categories: expect.any(Array),
+          items: expect.any(Array),
+        }),
+      );
+    });
+
+    it("GET /menu 404s for a branchId that doesn't exist", async () => {
+      await request(app.getHttpServer())
+        .get("/api/v1/menu?branchId=00000000-0000-0000-0000-000000000000")
+        .expect(404);
+    });
+
+    it("GET /menu rejects a malformed branchId", async () => {
+      await request(app.getHttpServer()).get("/api/v1/menu?branchId=not-a-uuid").expect(400);
+    });
+
+    it("GET /menu/categories returns only categories for the requested branch", async () => {
+      const branch = await createTestBranch(prisma);
+      const category = await createTestCategory(prisma, branch.id);
+
+      const response = await request(app.getHttpServer())
+        .get(`/api/v1/menu/categories?branchId=${branch.id}`)
+        .expect(200);
+
+      expect(response.body).toEqual(
+        expect.arrayContaining([expect.objectContaining({ id: category.id, branchId: branch.id })]),
+      );
+    });
+
+    it("GET /menu/:id returns a single available menu item", async () => {
+      const branch = await createTestBranch(prisma);
+      const category = await createTestCategory(prisma, branch.id);
+      const item = await createTestMenuItem(prisma, branch.id, category.id, {
+        nameEn: "Single Item Lookup",
+      });
+
+      const response = await request(app.getHttpServer())
+        .get(`/api/v1/menu/${item.id}`)
+        .expect(200);
+
+      expect(response.body).toMatchObject({ id: item.id, nameEn: "Single Item Lookup" });
+    });
+
+    it("GET /menu/:id 404s for an unavailable item", async () => {
+      const branch = await createTestBranch(prisma);
+      const category = await createTestCategory(prisma, branch.id);
+      const item = await createTestMenuItem(prisma, branch.id, category.id, {
+        isAvailable: false,
+      });
+
+      await request(app.getHttpServer()).get(`/api/v1/menu/${item.id}`).expect(404);
+    });
+
+    it("GET /menu/:id 404s for a menu item that doesn't exist", async () => {
+      await request(app.getHttpServer())
+        .get("/api/v1/menu/00000000-0000-0000-0000-000000000000")
+        .expect(404);
+    });
+
+    it("does not shadow /menu/categories with the :id route", async () => {
+      // A regression guard: if MenuController ever declared getItem(":id")
+      // before listCategories("categories"), this request would 400 (tries
+      // to parse "categories" as a menu item id) instead of 200.
+      const response = await request(app.getHttpServer())
+        .get("/api/v1/menu/categories")
+        .expect(200);
+
+      expect(Array.isArray(response.body)).toBe(true);
     });
   });
 });
