@@ -4,6 +4,7 @@ import { APP_FILTER, APP_GUARD } from "@nestjs/core";
 import { EventEmitterModule } from "@nestjs/event-emitter";
 import { ScheduleModule } from "@nestjs/schedule";
 import { ThrottlerModule } from "@nestjs/throttler";
+import { AppController } from "./app.controller";
 import { validateEnv } from "./common/config/env.validation";
 import { HttpExceptionFilter } from "./common/filters/http-exception.filter";
 import { AppThrottlerGuard } from "./common/guards/app-throttler.guard";
@@ -88,6 +89,7 @@ import { WebsocketsModule } from "./websockets/websockets.module";
     AiIntelligenceModule,
     EnterpriseModule,
   ],
+  controllers: [AppController],
   providers: [
     { provide: APP_GUARD, useClass: AppThrottlerGuard },
     { provide: APP_GUARD, useClass: JwtAuthGuard },
