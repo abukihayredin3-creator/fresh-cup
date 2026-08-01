@@ -10,7 +10,7 @@ services:
     # set to fresh-cup-platform so `pnpm install` finds the workspace and
     # so Start Command's relative path resolves correctly.
     rootDir: fresh-cup-platform
-    buildCommand: pnpm install --frozen-lockfile && pnpm turbo run build --filter=@fresh-cup/api...
+    buildCommand: pnpm install --frozen-lockfile && pnpm turbo run build --filter=@fresh-cup/api... --force
     # nest build (tsconfig.build.json -> outDir "./dist") emits
     # apps/api/dist/main.js — matches apps/api/package.json's own
     # "start": "node dist/main.js" script, run here from rootDir so the
