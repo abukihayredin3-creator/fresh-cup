@@ -16,9 +16,3 @@ export const api = createFreshCupClient({
 
 /** The bare server origin (no /api/v1 prefix) — Nest WebSocket gateways aren't under the REST global prefix. */
 export const apiOrigin = apiBaseUrl.replace(/\/api\/v1\/?$/, "");
-
-const apiBaseUrl =
-  process.env.NEXT_PUBLIC_API_URL ??
-  "http://localhost:4000/api/v1";
-
-console.log("API URL =", apiBaseUrl);
